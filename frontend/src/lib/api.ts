@@ -62,6 +62,20 @@ export type CalendarPill = { topic_id: number; name: string; colour: string | nu
 export type CalendarDay = { date: string; note_count: number; topics: CalendarPill[] }
 export type CalendarMonth = { month: string; days: CalendarDay[] }
 
+export type BackupEntry = {
+  name: string
+  path: string
+  taken_at: string
+  size_bytes: number
+}
+export type BackupList = {
+  directory: string
+  backups: BackupEntry[]
+  total_bytes: number
+}
+export type BackupRun = { created: BackupEntry; pruned: string[] }
+export type ExportResult = { path: string; note_count: number; file_count: number }
+
 export type SearchHit = {
   kind: 'note_block' | 'concept'
   note_id: number | null
@@ -157,6 +171,14 @@ export const api = {
   },
 
   calendar: (month: string) => request<CalendarMonth>(`/api/notes/calendar/${month}`),
+
+  backupList: () => request<BackupList>('/api/backup/list'),
+  backupNow: () => request<BackupRun>('/api/backup/now', { method: 'POST' }),
+  exportMarkdown: (destination?: string) =>
+    request<ExportResult>('/api/export/markdown', {
+      method: 'POST',
+      body: JSON.stringify(destination ? { destination } : {}),
+    }),
 
   search: (q: string) =>
     request<{ query: string; hits: SearchHit[] }>(`/api/search?q=${encodeURIComponent(q)}`),

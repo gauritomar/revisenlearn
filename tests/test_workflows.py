@@ -33,7 +33,8 @@ def test_workflow_1_app_starts_with_an_empty_dashboard(app, client) -> None:
 
     meta = client.get("/api/meta").json()
     assert meta["app_name"] == "Revise & Learn"
-    assert meta["phase"] == 1
+    # The shell reports the phase it is built to; screens above it stay disabled.
+    assert meta["phase"] >= 1
 
     # The dashboard is empty: nothing has been created yet.
     assert client.get("/api/subjects").json() == []

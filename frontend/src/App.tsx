@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 
-import { api } from './lib/api'
+import { api, type AppMeta } from './lib/api'
 import { useUI } from './store/ui'
 import { Header } from './components/Header'
 import { LeftSidebar } from './components/LeftSidebar'
@@ -14,6 +14,7 @@ import { ResourceQuickAdd } from './components/ResourceQuickAdd'
 import { ResourceList } from './components/ResourceList'
 import { ResourceSplitView } from './components/ResourceSplitView'
 import { DayView } from './components/Calendar'
+import { Settings } from './components/Settings'
 
 /** Spec §14.1 [LOCKED] — both sidebars auto-collapse below 900px. */
 const COLLAPSE_BELOW = 900
@@ -87,6 +88,7 @@ export function App() {
             activeNoteId={activeNoteId}
             activeResourceId={activeResourceId}
             activeDate={activeDate}
+            meta={meta}
           />
         </main>
 
@@ -106,17 +108,19 @@ export function App() {
   )
 }
 
-function MainContent({ view, onView, activeNoteId, activeResourceId, activeDate }: {
+function MainContent({ view, onView, activeNoteId, activeResourceId, activeDate, meta }: {
   view: string
   onView: (v: string) => void
   activeNoteId: number | null
   activeResourceId: number | null
   activeDate: string | null
+  meta: AppMeta | undefined
 }) {
   // An open surface wins over the current tab — the user clicked into it.
   if (activeResourceId !== null) return <ResourceSplitView resourceId={activeResourceId} />
   if (activeNoteId !== null) return <NoteEditor noteId={activeNoteId} />
   if (activeDate !== null) return <DayView date={activeDate} />
+  if (view === 'Settings') return <Settings meta={meta} />
   if (view === 'Resources') return <ResourceList />
   if (view === 'Notes') return <NotesEmpty />
   return <Dashboard onView={onView} />

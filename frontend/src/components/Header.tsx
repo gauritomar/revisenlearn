@@ -97,24 +97,34 @@ export function Header({ meta, view, onView }: {
           <kbd className="hidden font-ui text-[0.6875rem] tracking-wide sm:inline">⌘K</kbd>
         </button>
 
-        <HeaderLink label="Usage" phase={9} currentPhase={currentPhase} />
-        <HeaderLink label="Settings" phase={9} currentPhase={currentPhase} />
+        <HeaderLink label="Usage" phase={9} currentPhase={currentPhase}
+                    view={view} onView={onView} />
+        <HeaderLink label="Settings" phase={3} currentPhase={currentPhase}
+                    view={view} onView={onView} />
       </div>
     </header>
   )
 }
 
-function HeaderLink({ label, phase, currentPhase }: {
-  label: string; phase: number; currentPhase: number
+function HeaderLink({ label, phase, currentPhase, view, onView }: {
+  label: string
+  phase: number
+  currentPhase: number
+  view: string
+  onView: (v: string) => void
 }) {
   const available = phase <= currentPhase
+  const active = view === label
   return (
     <button
       type="button"
       disabled={!available}
+      onClick={() => available && onView(label)}
       title={available ? undefined : `Arrives in Phase ${phase}`}
+      data-testid={`nav-${label.toLowerCase()}`}
       className={[
         'hidden rounded-md px-2.5 py-1.5 text-[0.8125rem] transition sm:block',
+        active ? 'bg-accent-wash font-medium text-accent-deep' : '',
         available ? 'text-ink-soft hover:bg-sunken' : 'cursor-not-allowed text-faint',
       ].join(' ')}
     >
