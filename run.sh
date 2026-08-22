@@ -71,7 +71,11 @@ build_frontend_if_stale() {
   if ! command -v npm >/dev/null 2>&1; then
     die "npm is not installed. Install Node with: brew install node"
   fi
-  if [ ! -d frontend/node_modules ]; then
+  # Install on a fresh clone, and again whenever package.json has moved ahead
+  # of what is installed — a new dependency otherwise fails the build with a
+  # bare "cannot resolve" instead of installing itself.
+  if [ ! -d frontend/node_modules ] || \
+     [ frontend/package.json -nt frontend/node_modules ]; then
     info "Installing frontend dependencies..."
     (cd frontend && npm install --silent)
   fi
