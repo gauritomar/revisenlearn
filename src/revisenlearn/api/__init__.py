@@ -3,6 +3,7 @@ from fastapi import APIRouter
 from . import (
     backup,
     concepts,
+    graph,
     hierarchy,
     meta,
     notes,
@@ -21,6 +22,7 @@ api_router.include_router(hierarchy.router, tags=["hierarchy"])
 api_router.include_router(notes.router, tags=["notes"])
 api_router.include_router(resources.router, tags=["resources"])
 api_router.include_router(concepts.router, tags=["concepts"])
+api_router.include_router(graph.router, tags=["graph"])
 api_router.include_router(pipeline.router, tags=["pipeline"])
 api_router.include_router(practice.router, tags=["practice"])
 api_router.include_router(revision.router, tags=["revision"])

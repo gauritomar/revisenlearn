@@ -258,6 +258,85 @@ export type TodoEntry = {
   context: string | null
 }
 
+export type GraphNode = {
+  id: number
+  name: string
+  status: string
+  badge: string
+  mastery: number | null
+  importance: number
+  difficulty: number | null
+  subject: string | null
+  topic: string | null
+  subtopic: string | null
+  dimmed: boolean
+}
+export type GraphEdge = {
+  id: number
+  source: number
+  target: number
+  relation_type: string
+  status: string
+  confidence: number | null
+  created_by: string
+  job_id: number | null
+  dimmed: boolean
+}
+export type GraphPayload = {
+  view: string
+  nodes: GraphNode[]
+  edges: GraphEdge[]
+  counts: { nodes: number; edges: number }
+}
+export type ProposedEdge = {
+  id: number
+  source_id: number
+  target_id: number
+  source_name: string
+  target_name: string
+  relation_type: string
+  confidence: number | null
+  created_by: string
+  job_id: number | null
+  cycle_conflict: boolean
+  cycle_path: number[]
+}
+export type ConceptDetail = {
+  id: number
+  canonical_name: string
+  definition: string | null
+  status: string
+  importance: number | null
+  difficulty: number | null
+  coverage_profile: Record<string, boolean>
+  aliases: Array<{ id: number; alias: string; source: string }>
+  sources: Array<{ note_id: number; note_block_id: number; text: string | null; invalidated: boolean }>
+  edges: Array<{ id: number; direction: string; other_id: number; other_name: string; relation_type: string; status: string }>
+  review_items: Array<{ dimension: string; reps: number; lapses: number; suspended: boolean; due_at: string | null }>
+  history: Array<{ dimension: string; rating: number | null; created_at: string | null }>
+  mastery: { badge: string; mastery: number | null }
+  cost: { generations: number; input_tokens: number; output_tokens: number; estimated_cost_usd: number }
+}
+
+export type MergeRow = {
+  id: number
+  merged_from_id: number
+  merged_into_id: number
+  merged_from_name: string
+  merged_into_name: string
+  similarity: number | null
+  decided_by: string | null
+  created_at: string
+  reverted_at: string | null
+}
+export type ConceptRow = {
+  id: number
+  name?: string
+  canonical_name?: string
+  status?: string
+  importance?: number | null
+}
+
 export type SearchHit = {
   kind: 'note_block' | 'concept'
   note_id: number | null
@@ -489,6 +568,40 @@ export const api = {
     }),
   updateTodo: (id: number, body: Record<string, unknown>) =>
     request<Record<string, unknown>>(`/api/todos/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(body),
+    }),
+
+  graph: (params: Record<string, string | number> = {}) => {
+    const qs = new URLSearchParams(
+      Object.entries(params).map(([k, v]) => [k, String(v)]),
+    ).toString()
+    return request<GraphPayload>(`/api/graph${qs ? `?${qs}` : ''}`)
+  },
+  graphQueues: () => request<Record<string, number>>('/api/graph/queues'),
+  mergeQueue: () => request<MergeRow[]>('/api/graph/merge-queue'),
+  proposedEdges: () => request<ProposedEdge[]>('/api/graph/edges?status=proposed'),
+  staleConcepts: () => request<ConceptRow[]>('/api/graph/stale'),
+  autoMerged: () => request<MergeRow[]>('/api/graph/auto-merged'),
+  orphans: () => request<ConceptRow[]>('/api/graph/orphans'),
+  doMerge: (from: number, into: number) =>
+    request<Record<string, unknown>>('/api/graph/merge', {
+      method: 'POST',
+      body: JSON.stringify({ merged_from_id: from, merged_into_id: into }),
+    }),
+  rejectMerge: (id: number) =>
+    request<Record<string, unknown>>(`/api/graph/merge/${id}/reject`, { method: 'POST' }),
+  revertMerge: (id: number) =>
+    request<Record<string, unknown>>(`/api/graph/merge/${id}/revert`, { method: 'POST' }),
+  acceptEdge: (id: number) =>
+    request<Record<string, unknown>>(`/api/graph/edges/${id}/accept`, { method: 'POST' }),
+  rejectEdge: (id: number) =>
+    request<Record<string, unknown>>(`/api/graph/edges/${id}/reject`, { method: 'POST' }),
+  flipEdge: (id: number) =>
+    request<Record<string, unknown>>(`/api/graph/edges/${id}/flip`, { method: 'POST' }),
+  graphConcept: (id: number) => request<ConceptDetail>(`/api/graph/concepts/${id}`),
+  editConcept: (id: number, body: Record<string, unknown>) =>
+    request<ConceptDetail>(`/api/graph/concepts/${id}`, {
       method: 'PATCH',
       body: JSON.stringify(body),
     }),

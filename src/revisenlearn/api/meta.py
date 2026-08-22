@@ -26,6 +26,6 @@ def meta() -> dict:
     return {
         "app_name": "Revise & Learn",
         "version": __version__,
-        "phase": 7,
+        "phase": 8,
         "api_key": {"present": status.present, "source": status.source},
     }
