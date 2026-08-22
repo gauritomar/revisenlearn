@@ -39,6 +39,10 @@ class MockProvider:
             return self.builder(user_input, schema)
         if schema.__name__ == "MCQBatch":
             return default_mcqs(user_input)
+        if schema.__name__ == "GeneratedQuestion":
+            return default_question(user_input)
+        if schema.__name__ == "EvaluationResult":
+            return default_evaluation(user_input)
         return default_extraction(user_input)
 
     def generate_text(self, *, system_instruction: str, user_input: str,
@@ -175,3 +179,62 @@ def default_mcqs(user_input: str) -> dict:
             "difficulty": 3,
         })
     return {"questions": questions}
+
+
+_DIMENSION = re.compile(r"DIMENSION:\s*(\w+)")
+_KEY_POINTS = re.compile(r"KEY_POINTS:\n((?:- .*\n?)+)")
+
+
+def default_question(user_input: str) -> dict:
+    """One prose question with 3-6 independently checkable key points."""
+    concept_match = _CONCEPT.search(user_input)
+    concept = concept_match.group(1).strip() if concept_match else "the concept"
+    dimension_match = _DIMENSION.search(user_input)
+    dimension = dimension_match.group(1) if dimension_match else "explain"
+    rephrase = "REPHRASE" in user_input
+
+    lead = "In a different setting, walk through" if rephrase else "Walk through"
+    return {
+        "question_text": f"{lead} how {concept} behaves, and why ({dimension}).",
+        "expected_answer": f"A correct account of {concept}.",
+        "key_points": [
+            f"States what {concept} is",
+            f"Explains why {concept} matters",
+            f"Names a condition under which {concept} fails",
+        ],
+        "common_misconceptions": [f"Confusing {concept} with a neighbouring idea"],
+        "difficulty": 3,
+    }
+
+
+def default_evaluation(user_input: str) -> dict:
+    """Judge the answer by a deterministic rule the tests can steer.
+
+    The learner's answer is scanned for each key point's leading words. This is
+    crude on purpose: it makes the *rating derivation* testable without making
+    the test depend on a model's judgement.
+    """
+    block = _KEY_POINTS.search(user_input)
+    points = []
+    if block:
+        points = [line[2:].strip() for line in block.group(1).splitlines()
+                  if line.startswith("- ")]
+
+    answer = user_input.split("LEARNER_ANSWER:", 1)[-1].strip().lower()
+    hits = []
+    for point in points:
+        probe = " ".join(point.split()[:3]).lower()
+        hits.append({"point": point, "hit": probe in answer})
+
+    return {
+        "key_point_hits": hits,
+        "factually_incorrect_claims": (
+            ["An incorrect claim"] if "wrongclaim" in answer else []
+        ),
+        "misconceptions": (
+            ["A revealed misconception"] if "misconception" in answer else []
+        ),
+        "feedback": "This covered some ground; the missing piece is the "
+                    "failure condition.",
+        "suggested_rating": "good",
+    }

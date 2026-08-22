@@ -158,6 +158,68 @@ export type PracticeSummary = {
   missed_mcq_ids: number[]
 }
 
+export type ProseQuestion = {
+  item_id: number
+  position: number
+  question_id: number
+  concept_id: number
+  concept_name: string
+  dimension: string
+  question_text: string
+  expected_length: string
+  selection_bucket: string | null
+}
+export type ProseFeedback = {
+  attempt_id: number
+  question_id: number
+  rating: string
+  hit_ratio: number
+  key_point_hits: Array<{ point: string; hit: boolean }>
+  factually_incorrect_claims: string[]
+  misconceptions: string[]
+  feedback: string
+  expected_answer: string | null
+  due_at: string | null
+  skipped: boolean
+  overridden?: boolean
+}
+export type RevisionSummary = {
+  session_id: number
+  planned_count: number
+  completed_count: number
+  answered: number
+  duration_ms: number | null
+  finished: boolean
+  per_concept: Array<{
+    concept_id: number
+    concept_name: string
+    answered: number
+    ratings: string[]
+  }>
+  retest_offers: Array<{
+    attempt_id: number
+    question_id: number
+    concept_name: string
+    dimension: string
+    rating: string
+    question_text: string
+  }>
+}
+export type RevisionDashboard = {
+  due_count: number
+  overdue_count: number
+  new_count: number
+  reviews_logged: number
+  weak_areas: Array<{
+    concept_id: number
+    concept_name: string
+    dimension: string
+    last_rating: string
+  }>
+  sizes: number[]
+  default_size: number
+}
+
 export type SearchHit = {
   kind: 'note_block' | 'concept'
   note_id: number | null
@@ -303,6 +365,52 @@ export const api = {
     }),
   practiceSummary: (id: number) =>
     request<PracticeSummary>(`/api/practice/session/${id}/summary`),
+
+  revisionDashboard: () => request<RevisionDashboard>('/api/revision/dashboard'),
+  startRevision: (count: number) =>
+    request<{ id: number; planned_count: number }>('/api/revision/session', {
+      method: 'POST',
+      body: JSON.stringify({ count }),
+    }),
+  nextProseQuestion: (id: number) =>
+    request<{ done: boolean; question?: ProseQuestion; summary?: RevisionSummary }>(
+      `/api/revision/session/${id}/next`,
+    ),
+  answerProse: (
+    id: number,
+    body: { item_id: number; answer: string; response_ms?: number },
+  ) =>
+    request<ProseFeedback>(`/api/revision/session/${id}/answer`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+  skipProse: (id: number, item_id: number) =>
+    request<ProseFeedback>(`/api/revision/session/${id}/skip`, {
+      method: 'POST',
+      body: JSON.stringify({ item_id }),
+    }),
+  overrideProse: (id: number, attempt_id: number, direction: string) =>
+    request<{ rating: string; changed: boolean }>(
+      `/api/revision/session/${id}/override`,
+      { method: 'POST', body: JSON.stringify({ attempt_id, direction }) },
+    ),
+  startRetest: (id: number, attempt_id: number, mode: string) =>
+    request<Record<string, unknown>>(`/api/revision/session/${id}/retest`, {
+      method: 'POST',
+      body: JSON.stringify({ attempt_id, mode }),
+    }),
+  answerRetest: (
+    id: number,
+    body: { question_id: number; retest_of_attempt_id: number; answer: string },
+  ) =>
+    request<ProseFeedback>(`/api/revision/session/${id}/retest/answer`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+  finishRevision: (id: number) =>
+    request<RevisionSummary>(`/api/revision/session/${id}/finish`, {
+      method: 'POST',
+    }),
 
   search: (q: string) =>
     request<{ query: string; hits: SearchHit[] }>(`/api/search?q=${encodeURIComponent(q)}`),

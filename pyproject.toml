@@ -17,6 +17,9 @@ dependencies = [
     # semantic search must work offline (spec §16), so this is not optional.
     "fastembed>=0.4",
     "numpy>=1.26",
+    # Phase 7. Spec §2 names "py-fsrs"; the distribution is published as
+    # `fsrs`. Do not reimplement FSRS.
+    "fsrs>=5.0",
 ]
 
 [project.optional-dependencies]
