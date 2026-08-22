@@ -82,7 +82,12 @@ class AppProcess:
             conn.close()
 
 
-def start_app(db_path: Path, *, seed_subjects: bool = False) -> AppProcess:
+def start_app(
+    db_path: Path,
+    *,
+    seed_subjects: bool = False,
+    extra_env: dict[str, str] | None = None,
+) -> AppProcess:
     """Boot a real server subprocess against ``db_path``.
 
     Migrations run inside the app's own startup, so a successful boot is itself
@@ -101,7 +106,13 @@ def start_app(db_path: Path, *, seed_subjects: bool = False) -> AppProcess:
         "RNL_CREDS_DIR": str(db_path.parent / "no-creds"),
         # Never let a test open a real browser window on the user's screen.
         "RNL_NO_BROWSER": "1",
+        # Backups are opt-in per test; otherwise every app start would
+        # write one and the retention tests would be fighting noise.
+        "RNL_NO_NIGHTLY_BACKUP": "1",
+        # Keep exports and backups inside the test's own tmp_path.
+        "RNL_DATA_DIR": str(db_path.parent / "data"),
         "PYTHONUNBUFFERED": "1",
+        **(extra_env or {}),
     }
     env.pop("GEMINI_API_KEY", None)
 

@@ -17,6 +17,7 @@ from starlette.requests import Request
 
 from . import config
 from .api import api_router
+from .backup import run_nightly_if_due
 from .credentials import log_key_status_on_startup
 from .db import session_scope
 from .migrate import upgrade_to_head
@@ -38,8 +39,15 @@ async def lifespan(app: FastAPI):
     with session_scope() as session:
         seed_all(session)
     # Phase 1 resolves the key and reports its presence. No LLM call is made
-    # anywhere in this phase.
+    # until Phase 5.
     log_key_status_on_startup()
+
+    # Spec §17 — nightly backup at first launch after 03:00. The app is not a
+    # daemon, so this is a startup check rather than a schedule. It never
+    # raises: a failed backup must not stop the window opening.
+    taken = run_nightly_if_due()
+    if taken is not None:
+        log.info("Nightly backup taken: %s", taken.name)
     log.info("Revise & Learn ready on http://%s:%s", config.HOST, config.port())
     yield
 
