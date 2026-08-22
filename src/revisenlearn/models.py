@@ -47,6 +47,12 @@ LLM_TASKS = (
 BLOCK_TYPES = (
     "paragraph", "heading1", "heading2", "heading3", "bullet_list_item",
     "numbered_list_item", "quote", "code_block", "divider",
+    # Consolidated addendum §2. Typing "- [ ] text" makes one; "- [x] text"
+    # makes it pre-checked. One level of nesting via `parent_block_id`.
+    "checklist_item",
+    # §3 — inserted automatically on the first edit of a new calendar day, so
+    # a note spanning months stays navigable.
+    "date_divider",
 )
 
 
@@ -120,6 +126,11 @@ class Note(SQLModel, table=True):
     topic_id: Optional[int] = Field(default=None, foreign_key="topics.id")
     subtopic_id: Optional[int] = Field(default=None, foreign_key="subtopics.id")
     resource_id: Optional[int] = Field(default=None, foreign_key="resources.id")
+    #: Consolidated addendum §3 — a Lesson has ONE continuous note, not one per
+    #: day. This is now the primary anchor, mirroring `resource_id`.
+    #: `lesson_id IS NULL` remains a perfectly valid freeform note.
+    lesson_id: Optional[int] = Field(default=None, foreign_key="lessons.id",
+                                     index=True)
     created_at: datetime = Field(default_factory=utcnow)
     updated_at: datetime = Field(default_factory=utcnow)
     deleted_at: Optional[datetime] = None
@@ -138,6 +149,17 @@ class NoteBlock(SQLModel, table=True):
     content_hash: str
     #: NULL = never processed; != content_hash = processed then edited (stale).
     processed_hash: Optional[str] = None
+
+    # --- checklist_item blocks (consolidated addendum §2) -----------------
+    #: The note block is the single source of truth for checked-ness. The
+    #: `checklist_items` projection is derived from it and never diverges.
+    checked: bool = False
+    #: A URL written on this block. §4 auto-detects a Resource from it.
+    url: Optional[str] = None
+    #: One level of nesting only.
+    parent_block_id: Optional[int] = Field(default=None,
+                                           foreign_key="note_blocks.id")
+
     created_at: datetime = Field(default_factory=utcnow)
     updated_at: datetime = Field(default_factory=utcnow)
     deleted_at: Optional[datetime] = None
@@ -561,22 +583,40 @@ class Lesson(SQLModel, table=True):
     deleted_at: Optional[datetime] = None
 
 
-class LessonItem(SQLModel, table=True):
-    """An optional checkbox sub-step. Deliberately simple: a checkbox and
-    nothing else."""
+class ChecklistItem(SQLModel, table=True):
+    """A checklist line, **derived from a note block** (addendum §2).
 
-    __tablename__ = "lesson_items"
-    __table_args__ = (Index("ix_lesson_items_lesson_position", "lesson_id", "position"),)
+    "checklist_items rows are created/updated/deleted automatically whenever a
+    checklist_item block is saved … This table has no dedicated CRUD UI."
+
+    So this is a projection, not an authored table: `note_block_id` is UNIQUE
+    and every field mirrors the block. Toggling from Roadmap or the right panel
+    writes through to `note_blocks`, and this row follows — never a second,
+    divergent copy of the state.
+    """
+
+    __tablename__ = "checklist_items"
+    __table_args__ = (
+        UniqueConstraint("note_block_id", name="uq_checklist_note_block"),
+        Index("ix_checklist_items_lesson", "lesson_id"),
+        Index("ix_checklist_items_note", "note_id"),
+    )
 
     id: Optional[int] = Field(default=None, primary_key=True)
-    lesson_id: int = Field(foreign_key="lessons.id")
-    title: str
-    position: int = 0
-    done: bool = False
+    note_block_id: int = Field(foreign_key="note_blocks.id")
+    note_id: int = Field(foreign_key="notes.id")
+    #: Null when the note is freeform rather than a lesson's note.
+    lesson_id: Optional[int] = Field(default=None, foreign_key="lessons.id")
+    parent_checklist_item_id: Optional[int] = Field(
+        default=None, foreign_key="checklist_items.id"
+    )
+    text: str
+    url: Optional[str] = None
+    checked: bool = False
     completed_at: Optional[datetime] = None
+    position: int = 0
     created_at: datetime = Field(default_factory=utcnow)
     updated_at: datetime = Field(default_factory=utcnow)
-    deleted_at: Optional[datetime] = None
 
 
 class Todo(SQLModel, table=True):

@@ -22,8 +22,8 @@ from datetime import date, datetime, timezone
 from sqlmodel import Session, select
 
 from .models import (
+    ChecklistItem,
     Lesson,
-    LessonItem,
     Subject,
     Subtopic,
     Todo,
@@ -52,19 +52,24 @@ def _mean(values: list[float]) -> float | None:
 # §4 Progress rollup **[LOCKED]**
 # --------------------------------------------------------------------------
 
-def live_items(session: Session, lesson_id: int) -> list[LessonItem]:
+def live_items(session: Session, lesson_id: int) -> list[ChecklistItem]:
+    """A lesson's checklist, derived from its note's blocks.
+
+    Consolidated addendum §2 replaced the hand-authored `lesson_items` table
+    with this projection, so progress now follows what the user actually wrote
+    rather than a separately maintained list.
+    """
     return list(session.exec(
-        select(LessonItem)
-        .where(LessonItem.lesson_id == lesson_id,
-               LessonItem.deleted_at.is_(None))
-        .order_by(LessonItem.position, LessonItem.id)
+        select(ChecklistItem)
+        .where(ChecklistItem.lesson_id == lesson_id)
+        .order_by(ChecklistItem.position, ChecklistItem.id)
     ).all())
 
 
 def lesson_pct(session: Session, lesson: Lesson) -> float:
     items = live_items(session, lesson.id)
     if items:
-        return 100.0 * sum(1 for i in items if i.done) / len(items)
+        return 100.0 * sum(1 for i in items if i.checked) / len(items)
     return LESSON_STATUS_PCT.get(lesson.status, 0.0)
 
 
@@ -135,7 +140,7 @@ def sync_lesson_status(session: Session, lesson: Lesson) -> bool:
     items = live_items(session, lesson.id)
     if not items:
         return False
-    if all(i.done for i in items) and lesson.status != "done":
+    if all(i.checked for i in items) and lesson.status != "done":
         lesson.status = "done"
         lesson.updated_at = _now()
         session.add(lesson)
@@ -144,14 +149,18 @@ def sync_lesson_status(session: Session, lesson: Lesson) -> bool:
     return False
 
 
-def set_item_done(session: Session, item: LessonItem, done: bool) -> None:
-    item.done = done
-    item.completed_at = _now() if done else None
-    item.updated_at = _now()
-    session.add(item)
-    session.flush()
+def set_item_done(session: Session, item: ChecklistItem, done: bool) -> None:
+    """Toggle a checklist item from outside the note editor.
 
-    lesson = session.get(Lesson, item.lesson_id)
+    The write goes through `checklist.set_checked`, which updates the *note
+    block* and re-derives this row — addendum §2 forbids a second, divergent
+    copy of the state.
+    """
+    from .checklist import set_checked
+
+    set_checked(session, item.id, done)
+
+    lesson = session.get(Lesson, item.lesson_id) if item.lesson_id else None
     if lesson is not None and done:
         sync_lesson_status(session, lesson)
 
@@ -235,7 +244,8 @@ def _lesson_node(session: Session, lesson: Lesson) -> dict:
         "subtopic_id": lesson.subtopic_id,
         "pct": _round(lesson_pct(session, lesson)),
         "items": [
-            {"id": i.id, "title": i.title, "done": i.done,
+            {"id": i.id, "title": i.text, "done": i.checked,
+             "url": i.url, "note_block_id": i.note_block_id,
              "position": i.position}
             for i in items
         ],
@@ -303,8 +313,8 @@ def todo_board(session: Session, *, subject_id: int | None = None,
             entries.append({
                 "kind": "lesson_item",
                 "id": item.id,
-                "title": item.title,
-                "done": item.done,
+                "title": item.text,
+                "done": item.checked,
                 "due_date": None,
                 "subject_id": topic.subject_id if topic else None,
                 "topic_id": lesson.topic_id,

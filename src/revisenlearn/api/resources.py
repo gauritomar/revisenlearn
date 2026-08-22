@@ -9,6 +9,7 @@ remembers so the client does not have to.
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 import webbrowser
@@ -26,6 +27,8 @@ from .schemas import (
     TitleProbe,
     TitleProbeResult,
 )
+
+log = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -338,3 +341,111 @@ def open_resource(resource_id: int,
     ):
         webbrowser.open(resource.url)
     return _out(resource)
+
+
+# --------------------------------------------------------------------------
+# §4 Auto-detection from note content (consolidated addendum)
+# --------------------------------------------------------------------------
+
+def resource_for_url(session: Session, url: str, *, note=None) -> Resource | None:
+    """Find or create the Resource for a URL written in a note.
+
+    Addendum §4: manual entry stays exactly as it was; this is a second path
+    into the *same* table. "Both creation paths … are indistinguishable once
+    created — a resource doesn't 'know' which way it was added."
+
+    Reuses `probe_title` and `infer_resource_type`, so a link typed into a note
+    gets the same title fetch and type inference as one pasted into the dialog.
+    """
+    from ..checklist import normalise_url
+
+    cleaned = normalise_url(url)
+    if not re.match(r"^https?://", cleaned, re.IGNORECASE):
+        return None
+
+    for existing in session.exec(
+        select(Resource).where(Resource.deleted_at.is_(None),
+                               Resource.url.is_not(None))
+    ).all():
+        if normalise_url(existing.url) == cleaned:
+            return existing
+
+    # §4.4 — inherit placement from the note's lesson, then the note itself.
+    placement = {"subject_id": None, "topic_id": None, "subtopic_id": None}
+    if note is not None:
+        placement = {
+            "subject_id": note.subject_id,
+            "topic_id": note.topic_id,
+            "subtopic_id": note.subtopic_id,
+        }
+        if note.lesson_id:
+            from ..models import Lesson
+
+            lesson = session.get(Lesson, note.lesson_id)
+            if lesson is not None:
+                placement["topic_id"] = lesson.topic_id or placement["topic_id"]
+                placement["subtopic_id"] = (lesson.subtopic_id
+                                            or placement["subtopic_id"])
+                topic = session.get(Topic, lesson.topic_id)
+                if topic is not None:
+                    placement["subject_id"] = topic.subject_id
+
+    resource = Resource(
+        title=fetch_page_title(cleaned) or cleaned,
+        url=cleaned,
+        resource_type=infer_resource_type(cleaned),
+        status="inbox",
+        **placement,
+    )
+    session.add(resource)
+    session.flush()
+    log.info("Auto-detected resource from a note: %s", resource.title)
+    return resource
+
+
+def detect_resources_in_note(session: Session, note_id: int) -> list[int]:
+    """Scan a note's blocks for URLs and ensure a Resource exists for each.
+
+    Returns the ids touched. Never raises: a failed title fetch or an odd URL
+    must not stop a note from saving (principle §1.2 — note-taking never blocks
+    on anything).
+    """
+    from ..checklist import first_url
+    from ..models import Note, NoteBlock, NoteResourceLink
+
+    note = session.get(Note, note_id)
+    if note is None:
+        return []
+
+    blocks = session.exec(
+        select(NoteBlock).where(NoteBlock.note_id == note_id,
+                                NoteBlock.deleted_at.is_(None))
+    ).all()
+
+    touched: list[int] = []
+    for block in blocks:
+        url = block.url or first_url(block.text or "")
+        if not url:
+            continue
+        try:
+            resource = resource_for_url(session, url, note=note)
+        except Exception as exc:
+            log.warning("Could not auto-detect a resource from %s: %s", url, exc)
+            continue
+        if resource is None:
+            continue
+        touched.append(resource.id)
+
+        # Addendum §2 of the lessons addendum — the many-to-many link, which
+        # is what "links referenced in this note" reads from.
+        already = session.exec(
+            select(NoteResourceLink).where(
+                NoteResourceLink.note_id == note_id,
+                NoteResourceLink.resource_id == resource.id,
+            )
+        ).first()
+        if already is None:
+            session.add(NoteResourceLink(note_id=note_id,
+                                         resource_id=resource.id))
+    session.flush()
+    return touched

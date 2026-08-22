@@ -76,6 +76,11 @@ class BlockIn(BaseModel):
     position: int
     block_type: str = "paragraph"
     text: str = ""
+    #: checklist_item blocks (consolidated addendum §2).
+    checked: bool = False
+    url: Optional[str] = None
+    #: One level of nesting only.
+    parent_block_id: Optional[int] = None
 
 
 class BlockOut(BaseModel):
@@ -84,6 +89,9 @@ class BlockOut(BaseModel):
     position: int
     block_type: str
     text: str
+    checked: bool = False
+    url: Optional[str] = None
+    parent_block_id: Optional[int] = None
     content_hash: str
     processed_hash: Optional[str] = None
     #: Derived for the §4.2 indicator so the frontend does not re-implement it.
@@ -99,6 +107,9 @@ class NoteCreate(BaseModel):
     #: When set, `POST /api/notes/ensure` returns the note for this resource
     #: and day rather than the subtopic's own note (spec §5.1 split view).
     resource_id: Optional[int] = None
+    #: Consolidated addendum §3 — the primary path. A Lesson has ONE
+    #: continuous note; `study_date` is ignored when this is set.
+    lesson_id: Optional[int] = None
 
 
 class NoteUpdate(BaseModel):
@@ -113,6 +124,7 @@ class NoteOut(BaseModel):
     topic_id: Optional[int] = None
     subtopic_id: Optional[int] = None
     resource_id: Optional[int] = None
+    lesson_id: Optional[int] = None
     created_at: datetime
     updated_at: datetime
     blocks: list[BlockOut] = []

@@ -13,10 +13,14 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlmodel import Session, select
 
+import logging
+
+from ..checklist import first_url, parse_checkbox, reconcile_note
 from ..db import get_session, reindex_block
 from ..identity import invalidate_sources_for_block
+from .resources import detect_resources_in_note
 from ..hashing import content_hash
-from ..models import Note, NoteBlock, Resource, Subject, Subtopic, Topic
+from ..models import Lesson, Note, NoteBlock, Resource, Subject, Subtopic, Topic
 from .schemas import (
     BlockOut,
     BlocksSave,
@@ -28,11 +32,44 @@ from .schemas import (
     NoteUpdate,
 )
 
+log = logging.getLogger(__name__)
+
 router = APIRouter()
 
 
 def _now() -> datetime:
     return datetime.now(timezone.utc)
+
+
+def _maybe_add_date_divider(session: Session, note: Note) -> None:
+    """Addendum §3 — "When the first edit of a new calendar day happens on an
+    existing lesson note, insert a lightweight date-divider block
+    automatically, so a note spanning months stays navigable."
+
+    Idempotent: the divider for a given day is only ever added once, and never
+    to an empty note (a fresh note does not need one).
+    """
+    today = date_cls.today().isoformat()
+    blocks = _load_blocks(session, note.id)
+    if not blocks:
+        return
+    if any(b.block_type == "date_divider" and b.text == today for b in blocks):
+        return
+    # Only when the note last saw work on an earlier day.
+    updated = note.updated_at
+    if updated is not None:
+        seen = (updated if updated.tzinfo else updated.replace(tzinfo=timezone.utc))
+        if seen.date().isoformat() == today:
+            return
+
+    session.add(NoteBlock(
+        note_id=note.id,
+        position=max(b.position for b in blocks) + 1,
+        block_type="date_divider",
+        text=today,
+        content_hash=content_hash(today),
+    ))
+    session.flush()
 
 
 def _block_state(block: NoteBlock) -> str:
@@ -51,6 +88,9 @@ def _block_out(block: NoteBlock) -> BlockOut:
         position=block.position,
         block_type=block.block_type,
         text=block.text,
+        checked=block.checked,
+        url=block.url,
+        parent_block_id=block.parent_block_id,
         content_hash=block.content_hash,
         processed_hash=block.processed_hash,
         state=_block_state(block),
@@ -78,6 +118,7 @@ def _note_out(session: Session, note: Note) -> NoteOut:
         topic_id=note.topic_id,
         subtopic_id=note.subtopic_id,
         resource_id=note.resource_id,
+        lesson_id=note.lesson_id,
         created_at=note.created_at,
         updated_at=note.updated_at,
         blocks=[_block_out(b) for b in blocks],
@@ -92,6 +133,14 @@ def _note_out(session: Session, note: Note) -> NoteOut:
 def _resolve_ancestry(session: Session, note: Note) -> None:
     """Denormalise subject/topic from the subtopic so notes are queryable by
     any level of the hierarchy without a join chain."""
+    if note.lesson_id and not any(
+        (note.subtopic_id, note.topic_id, note.subject_id)
+    ):
+        # A lesson note is filed wherever its lesson lives.
+        lesson = session.get(Lesson, note.lesson_id)
+        if lesson:
+            note.topic_id = lesson.topic_id
+            note.subtopic_id = lesson.subtopic_id
     if note.resource_id and not any(
         (note.subtopic_id, note.topic_id, note.subject_id)
     ):
@@ -115,6 +164,12 @@ def _default_title(session: Session, note: Note) -> str:
     """A note is titled after its subtopic (spec §3's example: the note for
     "Hybrid search" is called "Hybrid search"), or after its resource when it
     is anchored to one (spec §5.1)."""
+    # Addendum §3 — "A note tied to a Lesson has no name of its own — it opens
+    # under the Lesson's name". No auto-numbering, ever.
+    if note.lesson_id:
+        lesson = session.get(Lesson, note.lesson_id)
+        if lesson:
+            return lesson.name
     if note.resource_id:
         resource = session.get(Resource, note.resource_id)
         if resource:
@@ -142,6 +197,7 @@ def list_notes(
     topic_id: int | None = Query(default=None),
     subject_id: int | None = Query(default=None),
     resource_id: int | None = Query(default=None),
+    lesson_id: int | None = Query(default=None),
     study_date: date_cls | None = Query(default=None),
     session: Session = Depends(get_session),
 ) -> list[NoteOut]:
@@ -154,6 +210,8 @@ def list_notes(
         stmt = stmt.where(Note.subject_id == subject_id)
     if resource_id is not None:
         stmt = stmt.where(Note.resource_id == resource_id)
+    if lesson_id is not None:
+        stmt = stmt.where(Note.lesson_id == lesson_id)
     if study_date is not None:
         stmt = stmt.where(Note.study_date == study_date)
     notes = session.exec(stmt.order_by(Note.study_date.desc(), Note.id.desc())).all()
@@ -170,6 +228,7 @@ def create_note(payload: NoteCreate,
         topic_id=payload.topic_id,
         subtopic_id=payload.subtopic_id,
         resource_id=payload.resource_id,
+        lesson_id=payload.lesson_id,
     )
     _resolve_ancestry(session, note)
     if not note.title:
@@ -189,6 +248,25 @@ def ensure_note(payload: NoteCreate,
     exist — the same move §5.1 describes for resources.
     """
     study_date = payload.study_date or date_cls.today()
+
+    # Consolidated addendum §3 — the primary path. A Lesson has ONE continuous
+    # note, not one per day, so this branch deliberately does not filter on
+    # study_date: the first visit creates it, every later visit returns it.
+    if payload.lesson_id is not None:
+        lesson = session.get(Lesson, payload.lesson_id)
+        if lesson is None or lesson.deleted_at is not None:
+            raise HTTPException(404, "Lesson not found")
+        existing = session.exec(
+            select(Note)
+            .where(Note.deleted_at.is_(None), Note.lesson_id == payload.lesson_id)
+            .order_by(Note.id)
+        ).first()
+        if existing is not None:
+            _maybe_add_date_divider(session, existing)
+            return _note_out(session, existing)
+        return create_note(payload.model_copy(update={"study_date": study_date}),
+                           session)
+
     stmt = select(Note).where(
         Note.deleted_at.is_(None),
         Note.study_date == study_date,
@@ -204,7 +282,9 @@ def ensure_note(payload: NoteCreate,
                           Note.subtopic_id.is_(None),
                           Note.resource_id.is_(None))
     else:
-        raise HTTPException(400, "resource_id, subtopic_id or topic_id is required")
+        raise HTTPException(
+            400, "lesson_id, resource_id, subtopic_id or topic_id is required"
+        )
 
     existing = session.exec(stmt.order_by(Note.id)).first()
     if existing is not None:
@@ -336,23 +416,45 @@ def save_blocks(note_id: int, payload: BlocksSave,
     seen: set[int] = set()
 
     for incoming in payload.blocks:
-        new_hash = content_hash(incoming.text)
+        # Addendum §2 — "- [ ] text" and "- [x] text" become checklist
+        # items on save, whatever produced the text (typing, or a paste).
+        block_type = incoming.block_type
+        text = incoming.text
+        checked = incoming.checked
+        parsed = parse_checkbox(text)
+        if parsed is not None:
+            checked, _body = parsed
+            block_type = "checklist_item"
+        elif block_type == "checklist_item":
+            # The editor says it is a checklist item even though the text has
+            # no marker yet; keep the type and normalise the text so reopening
+            # the note shows the box.
+            text = f"- [{'x' if checked else ' '}] {text.strip()}"
+
+        url = incoming.url or first_url(text)
+        new_hash = content_hash(text)
         block = existing.get(incoming.id) if incoming.id is not None else None
         previous_hash = block.content_hash if block is not None else None
         if block is None:
             block = NoteBlock(
                 note_id=note_id,
                 position=incoming.position,
-                block_type=incoming.block_type,
-                text=incoming.text,
+                block_type=block_type,
+                text=text,
+                checked=checked,
+                url=url,
+                parent_block_id=incoming.parent_block_id,
                 content_hash=new_hash,
             )
             session.add(block)
             session.flush()
         else:
             block.position = incoming.position
-            block.block_type = incoming.block_type
-            block.text = incoming.text
+            block.block_type = block_type
+            block.text = text
+            block.checked = checked
+            block.url = url
+            block.parent_block_id = incoming.parent_block_id
             block.content_hash = new_hash
             block.updated_at = _now()
             session.add(block)
@@ -378,4 +480,15 @@ def save_blocks(note_id: int, payload: BlocksSave,
     note.updated_at = now
     session.add(note)
     session.flush()
+
+    # Addendum §2 — the checklist projection follows the blocks.
+    reconcile_note(session, note_id)
+    # Addendum §4 — a URL written in a note becomes a Resource, without the
+    # user ever opening the add-resource dialog. Never allowed to fail a save
+    # (principle §1.2: note-taking never blocks on anything).
+    try:
+        detect_resources_in_note(session, note_id)
+    except Exception:
+        log.exception("Resource auto-detection failed for note %s", note_id)
+
     return _note_out(session, note)

@@ -13,10 +13,14 @@ import pytest
 from sqlmodel import select
 
 from revisenlearn import roadmap
+from revisenlearn.checklist import reconcile_note
+from revisenlearn.hashing import content_hash
 from revisenlearn.models import (
+    ChecklistItem,
     Concept,
     Lesson,
-    LessonItem,
+    Note,
+    NoteBlock,
     ReviewItem,
     ReviewLog,
     Subject,
@@ -51,15 +55,34 @@ def _lesson(session, tree, name="Window functions", status="not_started",
     return lesson
 
 
-def _items(session, lesson, done: list[bool]) -> list[LessonItem]:
-    rows = []
+def _items(session, lesson, done: list[bool]) -> list[ChecklistItem]:
+    """Write checklist lines into the lesson's note.
+
+    The consolidated addendum §2 made `checklist_items` a projection of note
+    blocks, so there is no way to author one directly any more — and these
+    tests go through the same path the editor does.
+    """
+    note = session.exec(
+        select(Note).where(Note.lesson_id == lesson.id,
+                           Note.deleted_at.is_(None))
+    ).first()
+    if note is None:
+        note = Note(title=lesson.name, study_date=dt.date(2026, 8, 22),
+                    lesson_id=lesson.id, topic_id=lesson.topic_id,
+                    subtopic_id=lesson.subtopic_id)
+        session.add(note)
+        session.flush()
+
     for index, is_done in enumerate(done):
-        item = LessonItem(lesson_id=lesson.id, title=f"Item {index}",
-                          position=index, done=is_done)
-        session.add(item)
-        rows.append(item)
+        text = f"- [{'x' if is_done else ' '}] Item {index}"
+        session.add(NoteBlock(
+            note_id=note.id, position=index, block_type="checklist_item",
+            text=text, checked=is_done, content_hash=content_hash(text),
+        ))
     session.flush()
-    return rows
+    reconcile_note(session, note.id)
+    session.flush()
+    return roadmap.live_items(session, lesson.id)
 
 
 # --------------------------------------------------------------------------

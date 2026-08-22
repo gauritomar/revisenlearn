@@ -12,8 +12,8 @@ from .. import roadmap as service
 from ..db import get_session
 from ..models import (
     LESSON_STATUSES,
+    ChecklistItem,
     Lesson,
-    LessonItem,
     LessonResourceLink,
     Note,
     NoteLessonLink,
@@ -174,68 +174,72 @@ def delete_lesson(lesson_id: int, session: Session = Depends(get_session)) -> No
 
 
 # --------------------------------------------------------------------------
-# Lesson items
+# Lesson checklist (consolidated addendum §2)
+#
+# Read-only plus a toggle. "This table has no dedicated CRUD UI. The only way
+# to create or edit a checklist item is by typing or checking a box inside the
+# note editor." Creating and editing therefore happen through
+# PUT /api/notes/{id}/blocks like any other block; there is deliberately no
+# POST or PATCH for text here.
 # --------------------------------------------------------------------------
 
-@router.get("/lessons/{lesson_id}/items")
-def list_items(lesson_id: int, session: Session = Depends(get_session)) -> list[dict]:
-    return [
-        {"id": i.id, "title": i.title, "done": i.done, "position": i.position}
-        for i in service.live_items(session, lesson_id)
-    ]
+class ChecklistToggle(BaseModel):
+    checked: bool
 
 
-@router.post("/lessons/{lesson_id}/items", status_code=201)
-def create_item(lesson_id: int, payload: ItemCreate,
-                session: Session = Depends(get_session)) -> dict:
-    lesson = session.get(Lesson, lesson_id)
-    if lesson is None or lesson.deleted_at is not None:
+def _checklist_out(item: ChecklistItem) -> dict:
+    return {
+        "id": item.id,
+        "note_block_id": item.note_block_id,
+        "note_id": item.note_id,
+        "lesson_id": item.lesson_id,
+        "parent_checklist_item_id": item.parent_checklist_item_id,
+        "text": item.text,
+        "url": item.url,
+        "checked": item.checked,
+        "position": item.position,
+    }
+
+
+@router.get("/lessons/{lesson_id}/checklist")
+def lesson_checklist(lesson_id: int,
+                     session: Session = Depends(get_session)) -> list[dict]:
+    from .. import checklist as service_checklist
+
+    if session.get(Lesson, lesson_id) is None:
         raise HTTPException(404, "Lesson not found")
-    item = LessonItem(
-        lesson_id=lesson_id,
-        title=payload.title.strip(),
-        position=(payload.position if payload.position is not None
-                  else _next_position(session, LessonItem, lesson_id=lesson_id)),
-    )
-    session.add(item)
-    session.flush()
-    return {"id": item.id, "title": item.title, "done": item.done,
-            "position": item.position}
+    return [_checklist_out(i) for i in service_checklist.for_lesson(session, lesson_id)]
 
 
-@router.patch("/lessons/{lesson_id}/items/{item_id}")
-def update_item(lesson_id: int, item_id: int, payload: ItemUpdate,
-                session: Session = Depends(get_session)) -> dict:
-    item = session.get(LessonItem, item_id)
-    if item is None or item.lesson_id != lesson_id or item.deleted_at is not None:
-        raise HTTPException(404, "Item not found")
+@router.get("/notes/{note_id}/checklist")
+def note_checklist(note_id: int,
+                   session: Session = Depends(get_session)) -> list[dict]:
+    from .. import checklist as service_checklist
 
-    fields = payload.model_dump(exclude_unset=True)
-    if "title" in fields:
-        item.title = fields["title"]
-    if "position" in fields:
-        item.position = fields["position"]
-    if "done" in fields:
-        service.set_item_done(session, item, bool(fields["done"]))
-    item.updated_at = _now()
-    session.add(item)
-    session.flush()
-
-    lesson = session.get(Lesson, lesson_id)
-    return {"id": item.id, "title": item.title, "done": item.done,
-            "position": item.position,
-            "lesson_status": lesson.status if lesson else None,
-            "lesson_pct": round(service.lesson_pct(session, lesson), 1) if lesson else None}
+    return [_checklist_out(i) for i in service_checklist.for_note(session, note_id)]
 
 
-@router.delete("/lessons/{lesson_id}/items/{item_id}", status_code=204)
-def delete_item(lesson_id: int, item_id: int,
-                session: Session = Depends(get_session)) -> None:
-    item = session.get(LessonItem, item_id)
-    if item is None or item.lesson_id != lesson_id or item.deleted_at is not None:
-        raise HTTPException(404, "Item not found")
-    item.deleted_at = _now()
-    session.add(item)
+@router.patch("/checklist/{item_id}")
+def toggle_checklist_item(item_id: int, payload: ChecklistToggle,
+                          session: Session = Depends(get_session)) -> dict:
+    """Tick a box from outside the note editor.
+
+    The write lands on the note block and the projection follows — §2 forbids
+    a divergent copy of the state.
+    """
+    from .. import checklist as service_checklist
+
+    try:
+        item = service_checklist.set_checked(session, item_id, payload.checked)
+    except LookupError as exc:
+        raise HTTPException(404, str(exc)) from None
+
+    if item.lesson_id and payload.checked:
+        lesson = session.get(Lesson, item.lesson_id)
+        if lesson is not None:
+            service.sync_lesson_status(session, lesson)
+
+    return _checklist_out(item)
 
 
 # --------------------------------------------------------------------------
