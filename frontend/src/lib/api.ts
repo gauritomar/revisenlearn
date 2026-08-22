@@ -110,6 +110,10 @@ export const api = {
       body: JSON.stringify({ subtopic_id, study_date }),
     }),
   note: (id: number) => request<Note>(`/api/notes/${id}`),
+  createNote: (body: Record<string, unknown>) =>
+    request<Note>('/api/notes', { method: 'POST', body: JSON.stringify(body) }),
+  updateNote: (id: number, body: Record<string, unknown>) =>
+    request<Note>(`/api/notes/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
   saveBlocks: (id: number, blocks: Array<{ id?: number | null; position: number; block_type: string; text: string }>) =>
     request<Note>(`/api/notes/${id}/blocks`, { method: 'PUT', body: JSON.stringify({ blocks }) }),
 
