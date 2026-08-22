@@ -77,9 +77,12 @@ Subject       GenAI
 
 | Table | Notes |
 |---|---|
-| `notes` | One per (Subtopic, day) by default. `subject_id`/`topic_id` are denormalised from the subtopic so a note is queryable at any level without a join chain. |
-| `note_blocks` | One paragraph / bullet / heading. The unit of content hashing. |
-| `resources` | Both the study to-do and the anchor for notes (§5). |
+| `notes` | One continuous note per **Lesson** (`lesson_id`), which is the default surface; still one per (Subtopic, day) for freeform notes with no lesson. `subject_id`/`topic_id` are denormalised from the subtopic so a note is queryable at any level without a join chain. |
+| `note_blocks` | One paragraph / bullet / heading / checklist item / date divider. The unit of content hashing. Carries `checked`, `url` and `parent_block_id` for checklist items (one level of nesting only). |
+| `checklist_items` | **Derived**, never authored: one row per `checklist_item` block, rebuilt on every save. `note_block_id` is UNIQUE. Toggling from the Roadmap or the right panel writes the *block* and re-derives this row — there is deliberately no endpoint that writes it directly. |
+| `resources` | Both the study to-do and the anchor for notes (§5). Created by hand **or** auto-detected from a URL written in a note; the two are indistinguishable afterwards. |
+| `lessons` | A unit of a subtopic (or of a topic directly). `position` orders siblings and is rewritten densely by `POST /api/tree/move`. |
+| `todos` | Standalone, not tied to a lesson, resource or note. |
 
 ### The processed-state indicator (§4.2 `[LOCKED]`)
 

@@ -2,8 +2,11 @@
 
 §5 and §7 are `[LOCKED]`, so both are asserted directly: the progress bars must
 carry no mastery vocabulary or traffic-light colour, and the tree builder must
-be the whole authoring flow — Enter to add, Tab to nest, Shift+Tab to pop out,
-with no dialog anywhere.
+be the whole authoring flow — Enter to add, with no dialog anywhere.
+
+The consolidated addendum §2 changed what "an item" is: checklist items are
+note blocks now, so the builder's old Tab-into-item-mode is gone. Tab opens
+the new lesson's note instead, which is where items are written.
 """
 
 from __future__ import annotations
@@ -11,6 +14,7 @@ from __future__ import annotations
 import sqlite3
 from pathlib import Path
 
+import httpx
 import pytest
 
 from conftest import start_app
@@ -68,6 +72,21 @@ def _subtopic_id(app) -> int:
     return app.query("SELECT id FROM subtopics")[0][0]
 
 
+def _write_items(app, lesson_id: int, *texts: str) -> list[int]:
+    """Put checklist items on a lesson the only way there is: type them into
+    its note (§2 — "This table has no dedicated CRUD UI")."""
+    with httpx.Client(base_url=app.base_url, timeout=30) as c:
+        note = c.post("/api/notes/ensure", json={"lesson_id": lesson_id}).json()
+        c.put(f"/api/notes/{note['id']}/blocks", json={"blocks": [
+            {"id": None, "position": i, "block_type": "paragraph",
+             "text": f"- [ ] {text}"}
+            for i, text in enumerate(texts)
+        ]})
+    return [r[0] for r in app.query(
+        "SELECT id FROM checklist_items ORDER BY position"
+    )]
+
+
 # --------------------------------------------------------------------------
 # §7 The inline tree builder **[LOCKED]**
 # --------------------------------------------------------------------------
@@ -95,11 +114,11 @@ def test_enter_adds_a_lesson_and_reopens_the_row(page_roadmap, roadmap_app) -> N
     assert field.evaluate("el => el === document.activeElement")
 
 
-def test_tab_nests_into_item_mode_and_shift_tab_pops_out(page_roadmap,
-                                                          roadmap_app) -> None:
-    """"Pressing Tab while adding a Lesson switches into 'add item' mode nested
-    under the lesson just created … Shift+Tab or Escape pops back out to
-    Lesson-adding at the parent level.\""""
+def test_tab_opens_the_note_of_the_lesson_just_added(page_roadmap,
+                                                    roadmap_app) -> None:
+    """The addendum's Tab-to-add-items is gone with `lesson_items` (§2): an
+    item is a `- [ ]` line in a note. Tab now goes where those are written —
+    the lesson's own note, per §3."""
     page = page_roadmap
     field = page.get_by_test_id(f"add-lesson-subtopic-{_subtopic_id(roadmap_app)}")
 
@@ -107,61 +126,31 @@ def test_tab_nests_into_item_mode_and_shift_tab_pops_out(page_roadmap,
     page.keyboard.type("Window functions")
     page.keyboard.press("Enter")
     page.wait_for_timeout(250)
-    assert field.get_attribute("data-mode") == "lesson"
 
     page.keyboard.press("Tab")
-    page.wait_for_function(
-        f"() => document.querySelector('[data-testid=\"add-lesson-subtopic-"
-        f"{_subtopic_id(roadmap_app)}\"]').dataset.mode === 'item'",
-        timeout=5000,
-    )
-
-    for title in ["Build byte-pair encoder", "Broadcasting"]:
-        page.keyboard.type(title)
-        page.keyboard.press("Enter")
-        page.wait_for_timeout(250)
-
-    items = [r[0] for r in roadmap_app.query(
-        "SELECT title FROM lesson_items ORDER BY position"
-    )]
-    assert items == ["Build byte-pair encoder", "Broadcasting"]
-
-    # Shift+Tab pops back out to lesson level.
-    page.keyboard.press("Shift+Tab")
-    page.wait_for_function(
-        f"() => document.querySelector('[data-testid=\"add-lesson-subtopic-"
-        f"{_subtopic_id(roadmap_app)}\"]').dataset.mode === 'lesson'",
-        timeout=5000,
-    )
-    page.keyboard.type("Second lesson")
-    page.keyboard.press("Enter")
-    page.wait_for_timeout(250)
-
-    assert roadmap_app.query("SELECT count(*) FROM lessons")[0][0] == 2
-    # The second lesson got no items — Shift+Tab really did pop out.
-    assert roadmap_app.query("SELECT count(*) FROM lesson_items")[0][0] == 2
+    page.get_by_test_id("note-editor").wait_for(state="visible", timeout=10_000)
+    assert page.get_by_test_id("note-title").inner_text() == "Window functions"
 
 
-def test_escape_also_pops_out_of_item_mode(page_roadmap, roadmap_app) -> None:
+def test_checklist_items_cannot_be_created_from_the_roadmap(page_roadmap,
+                                                            roadmap_app) -> None:
+    """§2 **[LOCKED]** — "This table has no dedicated CRUD UI." The Roadmap
+    points at the note rather than offering an input of its own."""
     page = page_roadmap
-    sid = _subtopic_id(roadmap_app)
-    field = page.get_by_test_id(f"add-lesson-subtopic-{sid}")
-
+    field = page.get_by_test_id(f"add-lesson-subtopic-{_subtopic_id(roadmap_app)}")
     field.click()
-    page.keyboard.type("A lesson")
+    page.keyboard.type("Window functions")
     page.keyboard.press("Enter")
-    page.wait_for_timeout(250)
-    page.keyboard.press("Tab")
-    page.wait_for_function(
-        f"() => document.querySelector('[data-testid=\"add-lesson-subtopic-{sid}\"]')"
-        ".dataset.mode === 'item'", timeout=5000,
-    )
+    page.wait_for_timeout(300)
 
-    page.keyboard.press("Escape")
-    page.wait_for_function(
-        f"() => document.querySelector('[data-testid=\"add-lesson-subtopic-{sid}\"]')"
-        ".dataset.mode === 'lesson'", timeout=5000,
-    )
+    lesson_id = roadmap_app.query("SELECT id FROM lessons")[0][0]
+    assert page.get_by_test_id(f"add-item-{lesson_id}").count() == 0
+
+    _write_items(roadmap_app, lesson_id, "First")
+    page.reload(wait_until="networkidle")
+    page.get_by_test_id("nav-roadmap").click()
+    page.get_by_test_id(f"lesson-chevron-{lesson_id}").click()
+    page.get_by_test_id(f"lesson-write-items-{lesson_id}").wait_for(state="visible")
 
 
 def test_there_is_no_create_dialog_anywhere(page_roadmap, roadmap_app) -> None:
@@ -191,19 +180,15 @@ def test_ticking_every_item_flips_the_lesson_and_moves_the_bars(page_roadmap,
     page.keyboard.type("Window functions")
     page.keyboard.press("Enter")
     page.wait_for_timeout(250)
-    page.keyboard.press("Tab")
-    page.wait_for_timeout(150)
-    for title in ["First", "Second"]:
-        page.keyboard.type(title)
-        page.keyboard.press("Enter")
-        page.wait_for_timeout(250)
 
     lesson_id = roadmap_app.query("SELECT id FROM lessons")[0][0]
-    page.get_by_test_id(f"lesson-{lesson_id}").locator("button").nth(1).click()
+    item_ids = _write_items(roadmap_app, lesson_id, "First", "Second")
 
-    item_ids = [r[0] for r in roadmap_app.query(
-        "SELECT id FROM lesson_items ORDER BY position"
-    )]
+    page.reload(wait_until="networkidle")
+    page.get_by_test_id("nav-roadmap").click()
+    page.get_by_test_id("roadmap").wait_for(state="visible")
+    page.get_by_test_id(f"lesson-chevron-{lesson_id}").click()
+
     page.get_by_test_id(f"item-{item_ids[0]}").click()
     page.wait_for_timeout(600)
     assert roadmap_app.query("SELECT status FROM lessons")[0][0] == "not_started"

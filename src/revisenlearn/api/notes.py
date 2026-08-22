@@ -414,8 +414,12 @@ def save_blocks(note_id: int, payload: BlocksSave,
     note = _get_note(session, note_id)
     existing = {b.id: b for b in _load_blocks(session, note_id)}
     seen: set[int] = set()
+    # A nested checklist item can be saved in the same breath as the item it
+    # sits under, which has no id yet — so the client may point at the
+    # parent's index instead. Parents always precede their children.
+    ids_by_index: dict[int, int] = {}
 
-    for incoming in payload.blocks:
+    for index, incoming in enumerate(payload.blocks):
         # Addendum §2 — "- [ ] text" and "- [x] text" become checklist
         # items on save, whatever produced the text (typing, or a paste).
         block_type = incoming.block_type
@@ -432,6 +436,9 @@ def save_blocks(note_id: int, payload: BlocksSave,
             text = f"- [{'x' if checked else ' '}] {text.strip()}"
 
         url = incoming.url or first_url(text)
+        parent_id = incoming.parent_block_id
+        if parent_id is None and incoming.parent_index is not None:
+            parent_id = ids_by_index.get(incoming.parent_index)
         new_hash = content_hash(text)
         block = existing.get(incoming.id) if incoming.id is not None else None
         previous_hash = block.content_hash if block is not None else None
@@ -443,7 +450,7 @@ def save_blocks(note_id: int, payload: BlocksSave,
                 text=text,
                 checked=checked,
                 url=url,
-                parent_block_id=incoming.parent_block_id,
+                parent_block_id=parent_id,
                 content_hash=new_hash,
             )
             session.add(block)
@@ -454,12 +461,13 @@ def save_blocks(note_id: int, payload: BlocksSave,
             block.text = text
             block.checked = checked
             block.url = url
-            block.parent_block_id = incoming.parent_block_id
+            block.parent_block_id = parent_id
             block.content_hash = new_hash
             block.updated_at = _now()
             session.add(block)
             session.flush()
         seen.add(block.id)
+        ids_by_index[index] = block.id
         reindex_block(session, block)
         # §7.4 — a changed block invalidates the concepts drawn from it. The
         # concepts stay scheduled; they just lose their evidence.
@@ -492,3 +500,118 @@ def save_blocks(note_id: int, payload: BlocksSave,
         log.exception("Resource auto-detection failed for note %s", note_id)
 
     return _note_out(session, note)
+
+
+# --------------------------------------------------------------------------
+# The right panel (consolidated addendum §6)
+#
+# "While viewing a Lesson's note, the right panel is **tabbed**": Checklist,
+# Pipeline & Concepts, Resources. All three are views of this one note, so
+# they come back together rather than as three polls.
+# --------------------------------------------------------------------------
+
+@router.get("/notes/{note_id}/panel")
+def note_panel(note_id: int, session: Session = Depends(get_session)) -> dict:
+    from ..checklist import for_note, normalise_url
+    from ..models import Concept, ConceptEdge, ConceptSource, NoteResourceLink
+
+    note = session.get(Note, note_id)
+    if note is None or note.deleted_at is not None:
+        raise HTTPException(404, "Note not found")
+
+    blocks = _load_blocks(session, note_id)
+
+    # --- Checklist (§2) ---------------------------------------------------
+    checklist = [
+        {"id": i.id, "note_block_id": i.note_block_id, "text": i.text,
+         "url": i.url, "checked": i.checked, "position": i.position,
+         "parent_checklist_item_id": i.parent_checklist_item_id}
+        for i in for_note(session, note_id)
+    ]
+
+    # --- Concepts extracted from this note --------------------------------
+    sources = session.exec(
+        select(ConceptSource).where(ConceptSource.note_id == note_id,
+                                    ConceptSource.invalidated_at.is_(None))
+    ).all()
+    concept_ids = {s.concept_id for s in sources}
+    concepts = [
+        {"id": c.id, "name": c.canonical_name, "status": c.status,
+         "definition": (c.definition or "")[:160]}
+        for c in sorted(
+            (c for c in (session.get(Concept, cid) for cid in concept_ids)
+             if c is not None and c.deleted_at is None),
+            key=lambda c: c.canonical_name,
+        )
+    ]
+
+    # --- Related concepts, one hop out ------------------------------------
+    related: dict[int, dict] = {}
+    if concept_ids:
+        edges = session.exec(
+            select(ConceptEdge).where(
+                ConceptEdge.deleted_at.is_(None),
+                ConceptEdge.status == "accepted",
+            )
+        ).all()
+        for edge in edges:
+            if edge.source_concept_id in concept_ids:
+                other_id, direction = edge.target_concept_id, "out"
+            elif edge.target_concept_id in concept_ids:
+                other_id, direction = edge.source_concept_id, "in"
+            else:
+                continue
+            if other_id in concept_ids or other_id in related:
+                continue
+            other = session.get(Concept, other_id)
+            if other is None or other.deleted_at is not None:
+                continue
+            related[other_id] = {"id": other.id, "name": other.canonical_name,
+                                 "relation": edge.relation_type,
+                                 "direction": direction}
+
+    # --- Resources referenced here (§4) -----------------------------------
+    # Both the links the user made by hand and the URLs auto-detected out of
+    # the writing; a resource does not know which way it arrived.
+    wanted = {normalise_url(u) for u in
+              (first_url(b.text or "") for b in blocks) if u}
+    wanted |= {normalise_url(b.url) for b in blocks if b.url}
+    linked = {row.resource_id for row in session.exec(
+        select(NoteResourceLink).where(NoteResourceLink.note_id == note_id)
+    ).all()}
+    if note.resource_id:
+        linked.add(note.resource_id)
+
+    resources = []
+    for resource in session.exec(
+        select(Resource).where(Resource.deleted_at.is_(None))
+    ).all():
+        matched = resource.id in linked or (
+            resource.url is not None and normalise_url(resource.url) in wanted
+        )
+        if matched:
+            resources.append({
+                "id": resource.id, "title": resource.title, "url": resource.url,
+                "resource_type": resource.resource_type, "status": resource.status,
+                "progress_pct": resource.progress_pct,
+                "progress_note": resource.progress_note,
+                # Spec §14 — "the right sidebar in Notes shows the current
+                # resource", so the note's own resource is marked as such.
+                "is_current": resource.id == note.resource_id,
+            })
+
+    return {
+        "note_id": note_id,
+        "lesson_id": note.lesson_id,
+        "checklist": checklist,
+        "concepts": concepts,
+        "related": list(related.values()),
+        # The note's own resource first; the rest alphabetically.
+        "resources": sorted(resources,
+                            key=lambda r: (not r["is_current"], r["title"].lower())),
+        "counts": {
+            "checklist": len(checklist),
+            "concepts": len(concepts),
+            "resources": len(resources),
+        },
+    }

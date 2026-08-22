@@ -104,6 +104,9 @@ def start_app(
         # Tests must never pick up the developer's real key from creds/ or the
         # Keychain; credential resolution is asserted separately.
         "RNL_CREDS_DIR": str(db_path.parent / "no-creds"),
+        # …and the developer's own Keychain entry, which no amount of env
+        # clearing would otherwise hide.
+        "RNL_NO_KEYCHAIN": "1",
         # Never let a test open a real browser window on the user's screen.
         "RNL_NO_BROWSER": "1",
         # Backups are opt-in per test; otherwise every app start would
@@ -224,6 +227,41 @@ def _open_page(browser, instance: AppProcess):
         # element assertion.
         assert not errors, f"Uncaught JavaScript errors: {errors}"
         context.close()
+
+
+# --------------------------------------------------------------------------
+# Sidebar navigation (consolidated addendum §5)
+#
+# "clicking a page's **chevron** expands children inline without navigating;
+# clicking the **name** navigates to open that page." Subject, Topic and
+# Subtopic names are inert, so a test that wants to see children clicks the
+# chevron, and a test that wants a note open clicks a Lesson's name.
+# --------------------------------------------------------------------------
+
+def expand_row(page, kind: str, name: str) -> None:
+    """Expand one row by its chevron — the only control that expands.
+
+    Idempotent: expansion is persisted across reloads, so clicking blind would
+    collapse a row that came back open.
+    """
+    row = page.get_by_test_id(f"{kind}-{name}")
+    row.wait_for(state="visible")
+    chevron = row.locator("button").first
+    if chevron.get_attribute("aria-expanded") != "true":
+        chevron.click()
+
+
+def open_lesson(page, subject: str, topic: str, subtopic: str | None,
+                lesson: str) -> None:
+    """Walk the tree by chevrons, then open the lesson's note by name."""
+    expand_row(page, "subject", subject)
+    expand_row(page, "topic", topic)
+    if subtopic is not None:
+        expand_row(page, "subtopic", subtopic)
+    opener = page.get_by_test_id(f"lesson-open-{lesson}")
+    opener.wait_for(state="visible")
+    opener.click()
+    page.get_by_test_id("note-editor").wait_for(state="visible")
 
 
 @pytest.fixture

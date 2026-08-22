@@ -103,17 +103,20 @@ def test_export_writes_markdown_and_reports_where(page, app) -> None:
     assert "RRF merges the two rankings" in files[0].read_text()
 
 
-def test_settings_names_what_is_still_to_come(page) -> None:
-    """The spec's Settings screen lists controls this build cannot honour yet.
-    They are named with their phase rather than rendered as dead inputs."""
+def test_settings_shows_the_controls_that_actually_do_something(page) -> None:
+    """Consolidated addendum §8 — those four groups were listed as "Still to
+    come" while three of them were already wired up. They are controls now,
+    and the one that genuinely is not editable (model assignment, a config
+    change per spec §12.2) says so rather than being hidden."""
     _open_settings(page)
     body = page.get_by_test_id("settings").inner_text()
 
-    for label in ["Similarity thresholds", "Model assignments",
-                  "FSRS parameters", "Session defaults"]:
-        assert label in body
-    assert "Phase 5" in body
-    assert "Phase 7" in body
+    for testid in ["threshold-auto", "fsrs-retention", "session-practice"]:
+        page.get_by_test_id(testid).wait_for(state="visible")
+    # Model assignment is a config change (§12.2), so it is shown, not edited.
+    page.get_by_test_id("model-assignments").wait_for(state="visible")
+    assert "config/providers.yaml" in body
+    assert "Still to come" not in body
 
 
 def test_settings_does_not_scroll_sideways_when_narrow(page) -> None:

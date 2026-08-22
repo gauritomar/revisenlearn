@@ -2,6 +2,7 @@ import { useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
 import { api, type RoadmapLesson, type RoadmapSubject } from '../lib/api'
+import { useOpenLesson } from '../lib/openLesson'
 
 /** Roadmap (addendum §6) — the full tree with percentage bars at every level.
  *
@@ -134,14 +135,17 @@ function Bar({ pct }: { pct: number | null }) {
 function LessonRow({ lesson }: { lesson: RoadmapLesson }) {
   const qc = useQueryClient()
   const [open, setOpen] = useState(false)
+  const openLesson = useOpenLesson()
 
   const setStatus = useMutation({
     mutationFn: (status: string) => api.updateLesson(lesson.id, { status }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['roadmap'] }),
   })
+  // Consolidated addendum §2 — ticking here writes to the *note block* the
+  // item came from; `checklist_items` is a projection, never a second copy.
   const toggleItem = useMutation({
     mutationFn: ({ itemId, done }: { itemId: number; done: boolean }) =>
-      api.updateLessonItem(lesson.id, itemId, { done }),
+      api.toggleChecklistItem(itemId, done),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['roadmap'] }),
   })
 
@@ -168,10 +172,31 @@ function LessonRow({ lesson }: { lesson: RoadmapLesson }) {
           {lesson.status === 'done' ? '✓' : lesson.status === 'in_progress' ? '–' : '·'}
         </button>
 
+        {/* §5 — the chevron previews in place; the name navigates. §3:
+            "not a checklist-only expand like Roadmap currently does." */}
+        {lesson.items.length > 0 && (
+          <button
+            type="button"
+            onClick={() => setOpen(!open)}
+            data-testid={`lesson-chevron-${lesson.id}`}
+            aria-label={`${open ? 'Hide' : 'Show'} ${lesson.name} checklist`}
+            aria-expanded={open}
+            className="grid size-4 shrink-0 place-items-center rounded text-faint transition hover:bg-sunken"
+          >
+            <svg
+              width="9" height="9" viewBox="0 0 10 10" fill="none" aria-hidden="true"
+              className={`transition-transform ${open ? 'rotate-90' : ''}`}
+            >
+              <path d="m3.5 2 3.5 3-3.5 3" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </button>
+        )}
+
         <button
           type="button"
-          onClick={() => setOpen(!open)}
-          className="min-w-0 flex-1 truncate text-left text-[0.8125rem] text-ink"
+          onClick={() => void openLesson(lesson.id)}
+          data-testid={`lesson-name-${lesson.id}`}
+          className="min-w-0 flex-1 truncate text-left text-[0.8125rem] text-ink transition hover:text-accent-deep"
         >
           {lesson.name}
           {lesson.items.length > 0 && (
@@ -201,7 +226,19 @@ function LessonRow({ lesson }: { lesson: RoadmapLesson }) {
               </span>
             </li>
           ))}
-          <ItemBuilder lessonId={lesson.id} />
+          {/* §2 — "This table has no dedicated CRUD UI. The only way to
+              create or edit a checklist item is by typing … inside the note
+              editor." So this points at the note instead of pretending. */}
+          <li>
+            <button
+              type="button"
+              onClick={() => void openLesson(lesson.id)}
+              data-testid={`lesson-write-items-${lesson.id}`}
+              className="px-1.5 py-1 text-[0.75rem] text-faint transition hover:text-accent-deep"
+            >
+              Write items in the note →
+            </button>
+          </li>
         </ul>
       )}
     </li>
@@ -224,9 +261,9 @@ function Builder({ topicId, subtopicId }: {
 }) {
   const qc = useQueryClient()
   const [value, setValue] = useState('')
-  const [mode, setMode] = useState<'lesson' | 'item'>('lesson')
   const [lastLessonId, setLastLessonId] = useState<number | null>(null)
   const input = useRef<HTMLInputElement>(null)
+  const openLesson = useOpenLesson()
 
   const addLesson = useMutation({
     mutationFn: (name: string) =>
@@ -239,43 +276,26 @@ function Builder({ topicId, subtopicId }: {
     },
   })
 
-  const addItem = useMutation({
-    mutationFn: (title: string) => api.createLessonItem(lastLessonId!, title),
-    onSuccess: async () => {
-      setValue('')
-      await qc.invalidateQueries({ queryKey: ['roadmap'] })
-      input.current?.focus()
-    },
-  })
-
+  /** Enter still adds lesson after lesson in a burst. Tab used to switch into
+   *  an "add item" mode; the consolidated addendum §2 removed that — items are
+   *  checkboxes typed in a note — so Tab now opens the note of the lesson just
+   *  created, which is where those items belong. */
   function onKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
     if (e.key === 'Enter') {
       e.preventDefault()
       const text = value.trim()
-      if (!text) return
-      if (mode === 'item' && lastLessonId !== null) addItem.mutate(text)
-      else addLesson.mutate(text)
+      if (text) addLesson.mutate(text)
       return
     }
-    if (e.key === 'Tab' && !e.shiftKey && mode === 'lesson' && lastLessonId !== null) {
-      // Nest under the lesson just created.
+    if (e.key === 'Tab' && !e.shiftKey && lastLessonId !== null) {
       e.preventDefault()
-      setMode('item')
       setValue('')
-      return
-    }
-    if ((e.key === 'Tab' && e.shiftKey) || e.key === 'Escape') {
-      if (mode === 'item') {
-        e.preventDefault()
-        e.stopPropagation()
-        setMode('lesson')
-        setValue('')
-      }
+      void openLesson(lastLessonId)
     }
   }
 
   return (
-    <div className={mode === 'item' ? 'ml-6 mt-1' : 'ml-3 mt-1'}>
+    <div className="ml-3 mt-1">
       <input
         ref={input}
         value={value}
@@ -286,45 +306,11 @@ function Builder({ topicId, subtopicId }: {
             ? `add-lesson-topic-${topicId}`
             : `add-lesson-subtopic-${subtopicId}`
         }
-        data-mode={mode}
-        placeholder={
-          mode === 'item'
-            ? '+ Add item   (Enter to add, Shift+Tab to go back)'
-            : '+ Add lesson   (Enter to add, Tab to add items)'
-        }
+        data-mode="lesson"
+        placeholder="+ Add lesson   (Enter to add, Tab to open its note)"
         className="w-full rounded-md border border-transparent bg-transparent px-1.5 py-1 text-[0.8125rem] text-ink outline-none transition placeholder:text-faint hover:border-line focus:border-accent focus:bg-paper"
       />
     </div>
-  )
-}
-
-function ItemBuilder({ lessonId }: { lessonId: number }) {
-  const qc = useQueryClient()
-  const [value, setValue] = useState('')
-  const add = useMutation({
-    mutationFn: (title: string) => api.createLessonItem(lessonId, title),
-    onSuccess: async () => {
-      setValue('')
-      await qc.invalidateQueries({ queryKey: ['roadmap'] })
-    },
-  })
-
-  return (
-    <li>
-      <input
-        value={value}
-        onChange={(e) => setValue(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' && value.trim()) {
-            e.preventDefault()
-            add.mutate(value.trim())
-          }
-        }}
-        data-testid={`add-item-${lessonId}`}
-        placeholder="+ Add item"
-        className="w-full rounded-md border border-transparent bg-transparent px-1.5 py-1 text-[0.8125rem] text-ink outline-none transition placeholder:text-faint hover:border-line focus:border-accent focus:bg-paper"
-      />
-    </li>
   )
 }
 
@@ -379,7 +365,9 @@ export function Todos() {
           status: entry.done ? 'not_started' : 'done',
         })
       }
-      return api.updateLessonItem(entry.lesson_id!, entry.id, { done: !entry.done })
+      // A checklist entry is a note block behind the scenes (§2), so the
+      // toggle goes through the projection's write-through endpoint.
+      return api.toggleChecklistItem(entry.id, !entry.done)
     },
     onSuccess: async () => {
       await qc.invalidateQueries({ queryKey: ['todo-board'] })

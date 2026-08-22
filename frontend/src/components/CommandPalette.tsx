@@ -10,6 +10,7 @@ export function CommandPalette() {
   const open = useUI((s) => s.paletteOpen)
   const setPalette = useUI((s) => s.setPalette)
   const openSubtopic = useUI((s) => s.openSubtopic)
+  const openAddWith = useUI((s) => s.openAddWith)
   const qc = useQueryClient()
 
   const [q, setQ] = useState('')
@@ -124,6 +125,24 @@ export function CommandPalette() {
               ))}
             </ul>
           )}
+        </div>
+
+        {/* §5 — the quick-add is "reachable via ⌘K", carrying whatever was
+            already typed as the new item's name. */}
+        <div className="border-t border-line-soft p-1.5">
+          <button
+            type="button"
+            onClick={() => openAddWith(q.trim())}
+            data-testid="palette-add"
+            className="flex w-full items-baseline gap-2 rounded-lg px-2.5 py-2 text-left transition hover:bg-sunken"
+          >
+            <span className="text-[0.8125rem] text-ink">
+              {q.trim() ? <>Add &ldquo;{q.trim()}&rdquo; to the tree</> : 'Add to the tree'}
+            </span>
+            <span className="ml-auto shrink-0 text-[0.6875rem] uppercase tracking-wide text-faint">
+              new
+            </span>
+          </button>
         </div>
       </div>
     </div>

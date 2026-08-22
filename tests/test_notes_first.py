@@ -35,13 +35,16 @@ def _tree(client) -> dict:
 
 
 def _write(client, note_id: int, lines: list[str]) -> None:
-    client.put(
+    response = client.put(
         f"/api/notes/{note_id}/blocks",
         json={"blocks": [
             {"id": None, "position": i, "block_type": "paragraph", "text": text}
             for i, text in enumerate(lines)
         ]},
     )
+    # A silently refused save turns every later assertion into a confusing
+    # "expected 2, got 0", so it fails here instead.
+    assert response.status_code == 200, response.text
 
 
 # --------------------------------------------------------------------------
@@ -492,3 +495,24 @@ def test_deleting_a_lesson_leaves_its_note_alone(client) -> None:
 
     assert client.get(f"/api/notes/{note['id']}").status_code == 200
     assert client.get("/api/subjects").json()[0]["topics"][0]["subtopics"][0]["lessons"] == []
+
+
+def test_dividers_and_empty_boxes_are_not_sent_to_the_model(client) -> None:
+    """A date divider is a marker the app wrote itself (§3) and an empty
+    checkbox is a line not yet written. Principle §1.3 — the system never
+    silently spends money, least of all on its own punctuation."""
+    tree = _tree(client)
+    note = client.post("/api/notes/ensure",
+                       json={"lesson_id": tree["lesson"]["id"]}).json()
+    client.put(f"/api/notes/{note['id']}/blocks", json={"blocks": [
+        {"id": None, "position": 0, "block_type": "date_divider",
+         "text": "2026-08-22"},
+        {"id": None, "position": 1, "block_type": "checklist_item",
+         "text": "- [ ] ", "checked": False},
+        {"id": None, "position": 2, "block_type": "paragraph",
+         "text": "Semantic chunking splits on meaning"},
+    ]})
+
+    preview = client.get("/api/pipeline/pending", params={"preview": True}).json()
+    assert preview["unprocessed_blocks"] == 1
+    assert preview["blocks"][0]["snippet"] == "Semantic chunking splits on meaning"

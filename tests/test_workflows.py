@@ -19,7 +19,7 @@ import datetime as dt
 import httpx
 import pytest
 
-from conftest import start_app
+from conftest import expand_row, open_lesson, start_app
 
 TODAY = dt.date.today().isoformat()
 
@@ -66,10 +66,15 @@ def test_workflow_1_ui_window_shows_header_logo_and_title(page) -> None:
     assert logo.evaluate("img => img.complete && img.naturalWidth > 0"), \
         "the header logo did not load"
 
-    # The dashboard is showing, and it is empty.
-    page.get_by_test_id("dashboard").wait_for(state="visible")
+    # Consolidated addendum §7 — "the app opens on **Calendar**, not
+    # Dashboard. Dashboard stays reachable from the nav as before" — and from
+    # the logo, which is now one button home.
+    page.get_by_test_id("calendar-screen").wait_for(state="visible")
     page.get_by_test_id("sidebar-empty").wait_for(state="visible")
     assert page.get_by_test_id("subject-tree").count() == 0
+
+    page.get_by_test_id("header-home").click()
+    page.get_by_test_id("dashboard").wait_for(state="visible")
 
 
 @pytest.mark.ui
@@ -84,9 +89,10 @@ def test_workflow_1_ui_sidebar_renders_seeded_subjects(seeded_page) -> None:
     assert seeded_page.locator('[data-testid^="subject-"]').count() >= 3
 
     # The tree really is a tree: expanding reveals topics, then subtopics.
-    seeded_page.get_by_test_id("subject-GenAI").click()
+    # §5 — the chevron expands; the name of an organisational level does not.
+    expand_row(seeded_page, "subject", "GenAI")
     seeded_page.get_by_test_id("topic-Retrieval").wait_for(state="visible")
-    seeded_page.get_by_test_id("topic-Retrieval").click()
+    expand_row(seeded_page, "topic", "Retrieval")
     seeded_page.get_by_test_id("subtopic-Hybrid search").wait_for(state="visible")
 
 
@@ -150,14 +156,27 @@ def test_workflow_2_ui_add_via_sidebar_plus_button(page, app) -> None:
     page.get_by_test_id("sidebar-add").click()
     page.get_by_test_id("add-dialog").wait_for(state="visible")
 
-    page.get_by_test_id("input-subject").fill("GenAI")
-    page.get_by_test_id("input-topic").fill("Retrieval")
-    page.get_by_test_id("input-subtopic").fill("Hybrid search")
+    # Consolidated addendum §5 — the quick-add picks a parent and names one
+    # thing, so a whole branch is three quick passes rather than one form.
+    # Nothing has to be expanded first: the parent is searched, not navigated.
+    page.get_by_test_id("input-name").fill("GenAI")
+    page.get_by_test_id("add-parent-root").click()
     page.get_by_test_id("add-dialog-submit").click()
-
-    # They appear in the tree in the sidebar (the dialog auto-expands them).
     page.get_by_test_id("subject-GenAI").wait_for(state="visible")
+
+    subject_id = app.query("SELECT id FROM subjects")[0][0]
+    page.get_by_test_id("sidebar-add").click()
+    page.get_by_test_id("input-name").fill("Retrieval")
+    page.get_by_test_id(f"add-parent-subject-{subject_id}").click()
+    page.get_by_test_id("add-dialog-submit").click()
     page.get_by_test_id("topic-Retrieval").wait_for(state="visible")
+
+    topic_id = app.query("SELECT id FROM topics")[0][0]
+    page.get_by_test_id("sidebar-add").click()
+    page.get_by_test_id("input-name").fill("Hybrid search")
+    page.get_by_test_id(f"add-parent-topic-{topic_id}").click()
+    page.get_by_test_id("add-kind-subtopic").click()
+    page.get_by_test_id("add-dialog-submit").click()
     page.get_by_test_id("subtopic-Hybrid search").wait_for(state="visible")
 
     # They are in the database.
@@ -180,7 +199,13 @@ def _make_branch(client: httpx.Client) -> dict:
     subtopic = client.post(
         "/api/subtopics", json={"topic_id": topic["id"], "name": "Hybrid search"}
     ).json()
-    return {"subject": subject, "topic": topic, "subtopic": subtopic}
+    # §3 — a lesson is what the user clicks to open a note.
+    lesson = client.post("/api/lessons", json={
+        "topic_id": topic["id"], "subtopic_id": subtopic["id"],
+        "name": "Hybrid retrieval in practice",
+    }).json()
+    return {"subject": subject, "topic": topic, "subtopic": subtopic,
+            "lesson": lesson}
 
 
 def test_workflow_3_take_a_note_and_it_survives_a_restart(app, client, db_path) -> None:
@@ -330,14 +355,15 @@ def test_workflow_3_ui_type_a_note_save_and_reopen(page, app, db_path, browser) 
     page.reload(wait_until="networkidle")
 
     # Click through to the subtopic.
-    page.get_by_test_id("subject-GenAI").click()
-    page.get_by_test_id("topic-Retrieval").click()
-    page.get_by_test_id("subtopic-Hybrid search").click()
+    open_lesson(page, "GenAI", "Retrieval", "Hybrid search",
+                "Hybrid retrieval in practice")
 
     # The editor pane opens with today's date.
     editor = page.get_by_test_id("note-editor")
     editor.wait_for(state="visible")
-    assert page.get_by_test_id("note-title").inner_text() == "Hybrid search"
+    # §3 — "A note tied to a Lesson has no name of its own — it opens under
+    # the Lesson's name in the breadcrumb/header."
+    assert page.get_by_test_id("note-title").inner_text() == "Hybrid retrieval in practice"
     assert page.get_by_test_id("note-date").get_attribute("datetime") == TODAY
 
     # Type some bullet points. "- " turns into a bullet list in Tiptap.
@@ -378,9 +404,8 @@ def test_workflow_3_ui_type_a_note_save_and_reopen(page, app, db_path, browser) 
         page2 = context.new_page()
         try:
             page2.goto(reopened.base_url, wait_until="networkidle")
-            page2.get_by_test_id("subject-GenAI").click()
-            page2.get_by_test_id("topic-Retrieval").click()
-            page2.get_by_test_id("subtopic-Hybrid search").click()
+            open_lesson(page2, "GenAI", "Retrieval", "Hybrid search",
+                        "Hybrid retrieval in practice")
 
             editor2 = page2.get_by_test_id("note-editor")
             editor2.wait_for(state="visible")
@@ -402,9 +427,8 @@ def test_workflow_3_ui_autosave_fires_without_pressing_anything(page, app) -> No
         _make_branch(c)
     page.reload(wait_until="networkidle")
 
-    page.get_by_test_id("subject-GenAI").click()
-    page.get_by_test_id("topic-Retrieval").click()
-    page.get_by_test_id("subtopic-Hybrid search").click()
+    open_lesson(page, "GenAI", "Retrieval", "Hybrid search",
+                "Hybrid retrieval in practice")
 
     editor = page.get_by_test_id("note-editor")
     editor.wait_for(state="visible")
@@ -433,8 +457,10 @@ def test_workflow_3_ui_processed_and_stale_indicators_render(page, app) -> None:
 
     with httpx.Client(base_url=app.base_url, timeout=30) as c:
         branch = _make_branch(c)
+        # §3 — write into the lesson's one continuous note, which is the note
+        # the sidebar opens.
         note = c.post(
-            "/api/notes/ensure", json={"subtopic_id": branch["subtopic"]["id"]}
+            "/api/notes/ensure", json={"lesson_id": branch["lesson"]["id"]}
         ).json()
         c.put(
             f"/api/notes/{note['id']}/blocks",
@@ -455,9 +481,8 @@ def test_workflow_3_ui_processed_and_stale_indicators_render(page, app) -> None:
     conn.close()
 
     page.reload(wait_until="networkidle")
-    page.get_by_test_id("subject-GenAI").click()
-    page.get_by_test_id("topic-Retrieval").click()
-    page.get_by_test_id("subtopic-Hybrid search").click()
+    open_lesson(page, "GenAI", "Retrieval", "Hybrid search",
+                "Hybrid retrieval in practice")
     page.get_by_test_id("note-editor").wait_for(state="visible")
 
     processed = page.locator('[data-block-state="processed"]')

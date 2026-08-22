@@ -94,12 +94,19 @@ logged — startup logs only `present`/`absent` and which source it came from.
 
 ## Daily workflow
 
-1. Open the app. The dashboard shows what is due and what you were working on.
-2. Pick a subtopic in the left sidebar. Today's note opens, created on the spot
-   if it does not exist yet.
-3. Write. Bullets are the fast path. Autosave is debounced 800ms after you stop
-   typing, plus on blur, plus every 30 seconds; `⌘S` forces it.
-4. `⌘K` searches everything you have written.
+1. Open the app. It lands on the calendar; the dashboard (the logo, or the nav)
+   shows what is due and what you were working on.
+2. Open a lesson in the left sidebar — a chevron expands a level in place, a
+   lesson's **name** opens its note. Each lesson has one continuous note that
+   grows over time, with a date divider dropped in automatically on the first
+   edit of a new day.
+3. Write. Bullets are the fast path. `- [ ]` makes a checklist item, which
+   shows up in the right panel, the Roadmap and Todos — all three write back to
+   the same line in the note. A URL becomes a resource on its own.
+4. Autosave is debounced 800ms after you stop typing, plus on blur, plus every
+   30 seconds; `⌘S` forces it.
+5. `⌘K` searches everything you have written, and adds a subject, topic,
+   subtopic or lesson anywhere in the tree without expanding it first.
 
 Or start from a resource, which is the faster daily entry point: **Add
 resource**, paste a link, press Enter. Click it to get a split view — the
@@ -107,7 +114,8 @@ resource, its status and progress slider on the left, today's note for it on
 the right. The dashboard's **Study next** ranks what to pick up, and the
 calendar shows what you wrote on any day.
 
-When you have written enough, press **Process notes**. It asks before it
+When you have written enough, press **Process notes**. It shows exactly which
+blocks it would send before it
 spends anything, then extracts concepts from your notes, deduplicates them
 against what you already know, and generates a pool of multiple-choice
 questions per concept. **Runs** shows what each job created and exactly what it

@@ -585,7 +585,92 @@ browser rather than guessed a third time.
 
 ---
 
-## 10. What is not built
+## 10. The notes-first rework (consolidated addendum)
+
+A single document superseded the lessons/todos addendum and two addenda that
+never reached this repo. It is a rework, not a patch, and these are the calls
+it forced.
+
+### `checklist_items` is a projection, and the API refuses to pretend otherwise
+
+§2 **[LOCKED]**: "This table has no dedicated CRUD UI. The only way to create
+or edit a checklist item is by typing or checking a box inside the note
+editor." So `lesson_items` is gone and the endpoints that wrote it are gone
+with it. What remains is `GET` plus one `PATCH` that toggles `checked` — and
+that toggle writes the **note block**, then re-derives the row. There is no
+code path that writes a `checklist_items` row directly, which is the only way
+to guarantee the two never diverge.
+
+The visible cost is in the Roadmap: its inline "add item" input and its
+Tab-into-item-mode had to go, because both created rows out of thin air. Tab
+now opens the new lesson's note, which is where items are actually written.
+
+### A lesson's note is found without `study_date`
+
+§3 asks for "ONE note that grows over time … not a new note per day". The
+`ensure_note` lesson branch therefore deliberately does not filter on
+`study_date` — the one query in that function that ignores the date. A comment
+says so, because it looks like a bug next to the three branches above it.
+
+### Navigation is a real route, in the hash
+
+§3 asks for "real page navigation (e.g. route `/lessons/{id}`), not an inline
+pane swap". This is a one-window local app with no router, so the route lives
+in `location.hash`: opening a lesson pushes `#/lessons/12`, Back works, and a
+reload lands on the same note. Adding a router for one route would have been
+more machinery than the requirement.
+
+### Name and chevron are separate targets
+
+§5 asks for Notion's distinction exactly: the chevron expands, the name
+navigates, and Subject/Topic/Subtopic names "do nothing". A row's name at
+those three levels is therefore a `<span>`, not a button — it has no hover
+state and no pointer cursor, because an inert control that looks clickable is
+worse than no control. Double-clicking it expands, as a concession to muscle
+memory.
+
+### One endpoint for dragging and for "Move to…"
+
+A drag and a picked destination are the same operation: a new parent and an
+index. `POST /api/tree/move` handles both for all four levels and renumbers
+the siblings densely, so ordering never depends on what the `sort_order`
+values happened to be before. A lesson may not straddle two topics: a subtopic
+that belongs elsewhere is a 400, not a silent correction.
+
+### The right panel defaults, but never overrides
+
+§6 wants Checklist to be the default "whenever the lesson has checklist items"
+and also that a finishing job "never force-switches the tab away from what
+they're doing". Both hold: the default is applied until the user picks a tab
+for that note, and a finished job raises a badge and nothing else.
+
+### `- [ ] ` needed its own input rule
+
+StarterKit turns `- ` into a bullet the moment the space lands, so TaskItem's
+own `[ ] ` rule can never fire — a `taskItem` cannot be wrapped inside a
+`listItem`. A small extension converts the enclosing list instead, which also
+gives the bare `[ ] ` form for free. Without it, §2's literal syntax would
+have produced a bullet reading "[ ] text".
+
+### The pipeline stopped paying for its own punctuation
+
+Date dividers are written by the app, and an empty checkbox is a line the user
+has not written yet. Neither is worth an input token, so both are excluded
+from what "Process notes" sends — visible in the new block preview, which
+lists exactly what a run would spend money on.
+
+### The Keychain had to become hideable
+
+`test_settings_reports_key_presence_but_never_the_key` asserts the app says
+"absent" when there is no key. The harness clears the environment and points
+`RNL_CREDS_DIR` at an empty directory, but it cannot un-import a key from the
+developer's own macOS Keychain — and once the key was imported there, the test
+started failing on this machine and only this machine. `RNL_NO_KEYCHAIN=1`
+makes "no key anywhere" a state the suite can actually reach.
+
+---
+
+## 11. What is not built
 
 Honest list, so nothing here is a surprise.
 
@@ -602,9 +687,12 @@ Honest list, so nothing here is a surprise.
 - **Saved graph views are computed, not stored.** §13.1 lists eight views and
   all eight work, but "saved" in the sense of the user naming their own is not
   built.
-- **Drag-to-reorder** for lessons and items (addendum §7) is not built;
-  `position` is maintained and the API accepts it, but reordering is not yet a
-  gesture.
 - **No prose questions are generated offline** (§16). That is by design — the
   spec says revision requires the API — and the UI says so plainly and points
   at Quick Practice instead.
+- **The data reset (consolidated addendum §0) has not been run.** It ships as
+  `scripts/reset_content.py`, which backs the database up first and needs
+  `--yes`. Deleting the user's live database is theirs to trigger, not mine.
+- **Checklist nesting is one level, and only from the editor.** The schema and
+  the projection carry `parent_block_id`, and Tiptap nests with Tab, but the
+  right panel's "+ add item" always appends at the top level.

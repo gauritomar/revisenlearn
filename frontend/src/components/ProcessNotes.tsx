@@ -116,6 +116,10 @@ function Preview({ count, onConfirm, onCancel, pending }: {
   const { data } = useQuery({
     queryKey: ['pipeline-preview'],
     queryFn: () => api.pendingPreview(),
+    // This list is the basis for spending money, so it is never served from
+    // a cache: it is fetched fresh every time the confirmation opens.
+    staleTime: 0,
+    refetchOnMount: 'always',
   })
 
   const grouped = new Map<string, PendingBlock[]>()

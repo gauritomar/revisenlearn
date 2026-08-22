@@ -8,14 +8,48 @@
 import type { JSONContent } from '@tiptap/react'
 import type { Block } from './api'
 
-export type DraftBlock = { id?: number | null; position: number; block_type: string; text: string }
+export type DraftBlock = {
+  id?: number | null
+  position: number
+  block_type: string
+  text: string
+  /** checklist_item blocks (consolidated addendum §2). */
+  checked?: boolean
+  /** One level of nesting: the index of the parent in this same payload. */
+  parent_index?: number | null
+}
+
+type Serialised = {
+  block_type: string
+  text: string
+  checked?: boolean
+  parentIndex?: number | null
+}
 
 /** Flatten a Tiptap doc into a positional block list. */
-export function docToBlocks(doc: JSONContent): Array<{ block_type: string; text: string }> {
-  const out: Array<{ block_type: string; text: string }> = []
+export function docToBlocks(doc: JSONContent): Serialised[] {
+  const out: Serialised[] = []
 
   for (const node of doc.content ?? []) {
     switch (node.type) {
+      // Consolidated addendum §2 — a checklist item is a block of its own,
+      // carrying its own checked state. The `- [ ]` marker stays in the text
+      // so the note reads the same however it is opened, and so the backend
+      // parses the same thing whether the item was typed or ticked.
+      case 'taskList':
+        for (const item of node.content ?? []) {
+          out.push(taskBlock(item))
+          // "One level of nesting only" — a list inside an item, and no
+          // deeper. Anything further nested is flattened to that one level.
+          const parentIndex = out.length - 1
+          for (const child of item.content ?? []) {
+            if (child.type !== 'taskList') continue
+            for (const nested of child.content ?? []) {
+              out.push({ ...taskBlock(nested), parentIndex })
+            }
+          }
+        }
+        break
       case 'heading': {
         const level = Math.min(3, Math.max(1, Number(node.attrs?.level ?? 1)))
         out.push({ block_type: `heading${level}`, text: textOf(node) })
@@ -40,6 +74,11 @@ export function docToBlocks(doc: JSONContent): Array<{ block_type: string; text:
       case 'horizontalRule':
         out.push({ block_type: 'divider', text: '' })
         break
+      // §3 — the automatic day marker in a long-running lesson note. It is
+      // written by the backend, not the user, so it round-trips untouched.
+      case 'dateDivider':
+        out.push({ block_type: 'date_divider', text: String(node.attrs?.date ?? '') })
+        break
       default:
         out.push({ block_type: 'paragraph', text: textOf(node) })
     }
@@ -57,6 +96,20 @@ export function docToBlocks(doc: JSONContent): Array<{ block_type: string; text:
   return out
 }
 
+function taskBlock(item: JSONContent): Serialised {
+  const checked = item.attrs?.checked === true
+  // Only the item's own paragraphs, never a nested list's text.
+  const text = (item.content ?? [])
+    .filter((child) => child.type !== 'taskList')
+    .map(textOf)
+    .join('')
+  return {
+    block_type: 'checklist_item',
+    text: `- [${checked ? 'x' : ' '}] ${text}`,
+    checked,
+  }
+}
+
 function textOf(node: JSONContent): string {
   if (node.type === 'text') return node.text ?? ''
   return (node.content ?? []).map(textOf).join('')
@@ -69,6 +122,35 @@ export function blocksToDoc(blocks: Block[]): JSONContent {
 
   while (i < blocks.length) {
     const block = blocks[i]
+
+    if (block.block_type === 'checklist_item') {
+      // Consecutive items become one task list, children nested under the
+      // item they belong to.
+      const items: JSONContent[] = []
+      const byId = new Map<number, JSONContent>()
+      while (i < blocks.length && blocks[i].block_type === 'checklist_item') {
+        const current = blocks[i]
+        const node: JSONContent = {
+          type: 'taskItem',
+          attrs: { checked: current.checked === true },
+          content: [paragraph(stripMarker(current.text))],
+        }
+        byId.set(current.id, node)
+        const parent = current.parent_block_id === null || current.parent_block_id === undefined
+          ? undefined
+          : byId.get(current.parent_block_id)
+        if (parent) {
+          const nested = parent.content!.find((c) => c.type === 'taskList')
+          if (nested) nested.content!.push(node)
+          else parent.content!.push({ type: 'taskList', content: [node] })
+        } else {
+          items.push(node)
+        }
+        i++
+      }
+      content.push({ type: 'taskList', content: items })
+      continue
+    }
 
     if (block.block_type === 'bullet_list_item' || block.block_type === 'numbered_list_item') {
       const listType = block.block_type === 'bullet_list_item' ? 'bulletList' : 'orderedList'
@@ -100,6 +182,9 @@ export function blocksToDoc(blocks: Block[]): JSONContent {
       case 'divider':
         content.push({ type: 'horizontalRule' })
         break
+      case 'date_divider':
+        content.push({ type: 'dateDivider', attrs: { date: block.text } })
+        break
       default:
         content.push(paragraph(block.text))
     }
@@ -108,6 +193,13 @@ export function blocksToDoc(blocks: Block[]): JSONContent {
 
   if (content.length === 0) content.push(paragraph(''))
   return { type: 'doc', content }
+}
+
+/** `- [x] Read the paper` → `Read the paper`. The marker is the storage
+ *  format; the editor shows a real checkbox instead. */
+export function stripMarker(text: string): string {
+  const match = /^\s*[-*]\s*\[[ xX]\]\s*(.*)$/.exec(text ?? '')
+  return match ? match[1] : (text ?? '')
 }
 
 const paragraph = (text: string): JSONContent => ({ type: 'paragraph', content: inline(text) })
@@ -122,7 +214,7 @@ const inline = (text: string): JSONContent[] | undefined =>
  *  wherever it moved to. Anything left over is matched by position, which
  *  covers the common case of editing a block in place. */
 export function reconcile(
-  serialised: Array<{ block_type: string; text: string }>,
+  serialised: Serialised[],
   existing: Block[],
 ): DraftBlock[] {
   const unused = new Set(existing.map((b) => b.id))
@@ -162,5 +254,9 @@ export function reconcile(
     position: idx,
     block_type: s.block_type,
     text: s.text,
+    checked: s.checked ?? false,
+    // Resolved server-side against this same payload, so a child saved
+    // alongside a brand-new parent still lands under it.
+    parent_index: s.parentIndex ?? null,
   }))
 }

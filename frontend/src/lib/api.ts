@@ -1,8 +1,73 @@
 /** Thin API client. Same origin in production; Vite proxies in --dev. */
 
-export type Subtopic = { id: number; topic_id: number; name: string; sort_order: number }
-export type Topic = { id: number; subject_id: number; name: string; sort_order: number; subtopics: Subtopic[] }
+/** A lesson as the sidebar tree carries it (consolidated addendum §5). */
+export type LessonBrief = {
+  id: number
+  topic_id: number
+  subtopic_id: number | null
+  name: string
+  status: string
+  position: number
+  checklist_total: number
+  checklist_done: number
+}
+export type Subtopic = {
+  id: number
+  topic_id: number
+  name: string
+  sort_order: number
+  lessons: LessonBrief[]
+}
+export type Topic = {
+  id: number
+  subject_id: number
+  name: string
+  sort_order: number
+  subtopics: Subtopic[]
+  lessons: LessonBrief[]
+}
 export type Subject = { id: number; name: string; colour: string | null; sort_order: number; topics: Topic[] }
+
+export type TreeKind = 'subject' | 'topic' | 'subtopic' | 'lesson'
+
+export type NotePanel = {
+  note_id: number
+  lesson_id: number | null
+  checklist: Array<{
+    id: number
+    note_block_id: number
+    text: string
+    url: string | null
+    checked: boolean
+    position: number
+    parent_checklist_item_id: number | null
+  }>
+  concepts: Array<{ id: number; name: string; status: string; definition: string }>
+  related: Array<{ id: number; name: string; relation: string; direction: 'in' | 'out' }>
+  resources: Array<{
+    id: number
+    title: string
+    url: string | null
+    resource_type: string
+    status: ResourceStatus
+    progress_pct: number
+    progress_note: string | null
+    is_current: boolean
+  }>
+  counts: { checklist: number; concepts: number; resources: number }
+}
+
+export type ChecklistItem = {
+  id: number
+  note_block_id: number
+  note_id: number
+  lesson_id: number | null
+  parent_checklist_item_id: number | null
+  text: string
+  url: string | null
+  checked: boolean
+  position: number
+}
 
 export type BlockState = 'unprocessed' | 'processed' | 'stale'
 export type Block = {
@@ -11,6 +76,10 @@ export type Block = {
   position: number
   block_type: string
   text: string
+  /** checklist_item blocks (consolidated addendum §2). */
+  checked: boolean
+  url: string | null
+  parent_block_id: number | null
   content_hash: string
   processed_hash: string | null
   state: BlockState
@@ -23,6 +92,8 @@ export type Note = {
   topic_id: number | null
   subtopic_id: number | null
   resource_id: number | null
+  /** §3 — the lesson whose one continuous note this is, if any. */
+  lesson_id: number | null
   created_at: string
   updated_at: string
   blocks: Block[]
@@ -436,6 +507,43 @@ export const api = {
     request<Topic>('/api/topics', { method: 'POST', body: JSON.stringify({ subject_id, name }) }),
   createSubtopic: (topic_id: number, name: string) =>
     request<Subtopic>('/api/subtopics', { method: 'POST', body: JSON.stringify({ topic_id, name }) }),
+  deleteSubject: (id: number) =>
+    request<void>(`/api/subjects/${id}`, { method: 'DELETE' }),
+  deleteTopic: (id: number) =>
+    request<void>(`/api/topics/${id}`, { method: 'DELETE' }),
+  deleteSubtopic: (id: number) =>
+    request<void>(`/api/subtopics/${id}`, { method: 'DELETE' }),
+
+  /** §5 — a drag and a "Move to…" pick are the same call. */
+  moveTreeItem: (body: {
+    kind: TreeKind
+    id: number
+    parent_id?: number | null
+    subtopic_id?: number | null
+    position: number
+  }) =>
+    request<{ kind: string; id: number; position: number; siblings: number[] }>(
+      '/api/tree/move',
+      { method: 'POST', body: JSON.stringify(body) },
+    ),
+
+  /** §3 — a lesson's one continuous note, created on first visit. */
+  ensureLessonNote: (lesson_id: number) =>
+    request<Note>('/api/notes/ensure', {
+      method: 'POST',
+      body: JSON.stringify({ lesson_id }),
+    }),
+  lessonChecklist: (lessonId: number) =>
+    request<ChecklistItem[]>(`/api/lessons/${lessonId}/checklist`),
+  noteChecklist: (noteId: number) =>
+    request<ChecklistItem[]>(`/api/notes/${noteId}/checklist`),
+  /** §6 — everything the three right-panel tabs need, in one call. */
+  notePanel: (noteId: number) => request<NotePanel>(`/api/notes/${noteId}/panel`),
+  toggleChecklistItem: (itemId: number, checked: boolean) =>
+    request<ChecklistItem>(`/api/checklist/${itemId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ checked }),
+    }),
 
   ensureNote: (subtopic_id: number, study_date?: string) =>
     request<Note>('/api/notes/ensure', {
@@ -447,7 +555,14 @@ export const api = {
     request<Note>('/api/notes', { method: 'POST', body: JSON.stringify(body) }),
   updateNote: (id: number, body: Record<string, unknown>) =>
     request<Note>(`/api/notes/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
-  saveBlocks: (id: number, blocks: Array<{ id?: number | null; position: number; block_type: string; text: string }>) =>
+  saveBlocks: (id: number, blocks: Array<{
+    id?: number | null
+    position: number
+    block_type: string
+    text: string
+    checked?: boolean
+    parent_index?: number | null
+  }>) =>
     request<Note>(`/api/notes/${id}/blocks`, { method: 'PUT', body: JSON.stringify({ blocks }) }),
 
   resources: (params: Record<string, string | number> = {}) => {
@@ -608,16 +723,6 @@ export const api = {
     }),
   deleteLesson: (id: number) =>
     request<void>(`/api/lessons/${id}`, { method: 'DELETE' }),
-  createLessonItem: (lessonId: number, title: string) =>
-    request<RoadmapItem>(`/api/lessons/${lessonId}/items`, {
-      method: 'POST',
-      body: JSON.stringify({ title }),
-    }),
-  updateLessonItem: (lessonId: number, itemId: number, body: Record<string, unknown>) =>
-    request<RoadmapItem>(`/api/lessons/${lessonId}/items/${itemId}`, {
-      method: 'PATCH',
-      body: JSON.stringify(body),
-    }),
 
   todoBoard: (params: Record<string, string | number | boolean> = {}) => {
     const qs = new URLSearchParams(
@@ -719,30 +824,4 @@ export const api = {
 
   search: (q: string) =>
     request<{ query: string; hits: SearchHit[] }>(`/api/search?q=${encodeURIComponent(q)}`),
-}
-
-/** Creates subject → topic → subtopic, reusing any level that already exists
- *  by (case-insensitive) name. Keeps the add flow to one dialog. */
-export async function createBranch(
-  subjects: Subject[],
-  subjectName: string,
-  topicName: string,
-  subtopicName: string,
-): Promise<{ subjectId: number; topicId: number | null; subtopicId: number | null }> {
-  const eq = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase()
-
-  let subject = subjects.find((s) => eq(s.name, subjectName))
-  const subjectId = subject ? subject.id : (await api.createSubject(subjectName.trim())).id
-
-  if (!topicName.trim()) return { subjectId, topicId: null, subtopicId: null }
-
-  const existingTopic = subject?.topics.find((t) => eq(t.name, topicName))
-  const topicId = existingTopic ? existingTopic.id : (await api.createTopic(subjectId, topicName.trim())).id
-
-  if (!subtopicName.trim()) return { subjectId, topicId, subtopicId: null }
-
-  const existingSub = existingTopic?.subtopics.find((s) => eq(s.name, subtopicName))
-  const subtopicId = existingSub ? existingSub.id : (await api.createSubtopic(topicId, subtopicName.trim())).id
-
-  return { subjectId, topicId, subtopicId }
 }

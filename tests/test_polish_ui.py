@@ -157,6 +157,8 @@ def test_the_fx_rate_shows_rupees(page_polish) -> None:
 def test_question_mark_opens_the_shortcut_overlay(page_polish) -> None:
     """Spec §14.4 — "A `?` overlay lists them"."""
     page = page_polish
+    # §7 — the app lands on Calendar; the dashboard is one click away.
+    page.get_by_test_id("header-home").click()
     page.get_by_test_id("dashboard").wait_for(state="visible")
     page.keyboard.press("?")
 
@@ -236,6 +238,8 @@ def test_adaptive_coverage_can_be_run_by_hand(page_polish) -> None:
 
 def test_the_dashboard_shows_a_mastery_distribution(page_polish) -> None:
     page = page_polish
+    # §7 — the app lands on Calendar; the dashboard is one click away.
+    page.get_by_test_id("header-home").click()
     page.get_by_test_id("dashboard").wait_for(state="visible")
     dist = page.get_by_test_id("mastery-distribution")
     dist.wait_for(state="visible", timeout=15_000)
@@ -248,6 +252,8 @@ def test_the_dashboard_shows_a_mastery_distribution(page_polish) -> None:
 def test_the_dashboard_never_shows_a_streak(page_polish) -> None:
     """Spec §14 and §9.6 — "No streaks. No combo counters.\""""
     page = page_polish
+    # §7 — the app lands on Calendar; the dashboard is one click away.
+    page.get_by_test_id("header-home").click()
     page.get_by_test_id("dashboard").wait_for(state="visible")
     body = page.get_by_test_id("dashboard").inner_text().lower()
     for word in ["streak", "combo", "day in a row", "don't break"]:

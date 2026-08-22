@@ -103,6 +103,9 @@ class BlockIn(BaseModel):
     url: Optional[str] = None
     #: One level of nesting only.
     parent_block_id: Optional[int] = None
+    #: For a child whose parent is also new and so has no id yet: the parent's
+    #: index in this same payload. Ignored when ``parent_block_id`` is given.
+    parent_index: Optional[int] = None
 
 
 class BlockOut(BaseModel):

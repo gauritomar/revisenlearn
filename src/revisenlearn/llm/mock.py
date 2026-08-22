@@ -11,6 +11,7 @@ never selects it.
 from __future__ import annotations
 
 import json
+import os
 import re
 import time
 from typing import Any, Callable, Sequence
@@ -31,6 +32,14 @@ class MockProvider:
         self.responses = list(responses or [])
         self.builder = builder
         self.calls: list[dict] = []
+        # A real call takes seconds; this one takes microseconds, which makes
+        # "a job is still in flight" impossible to observe from outside.
+        # RNL_MOCK_LATENCY_MS buys a test that window without a sleep in the
+        # pipeline itself.
+        try:
+            self.latency_s = max(0.0, float(os.environ.get("RNL_MOCK_LATENCY_MS", "0")) / 1000)
+        except ValueError:
+            self.latency_s = 0.0
 
     def _next(self, user_input: str, schema: type[BaseModel]) -> Any:
         if self.responses:
@@ -51,6 +60,8 @@ class MockProvider:
         self.calls.append({"kind": "text", "model": model,
                            "input": user_input,
                            "thinking_level": thinking_level})
+        if self.latency_s:
+            time.sleep(self.latency_s)
         return LLMResult(
             text="mock", usage=_usage(user_input, "mock"), model=model,
             prompt_version=prompt_version, thinking_level=thinking_level,
@@ -65,6 +76,8 @@ class MockProvider:
                            "input": user_input, "schema": schema.__name__,
                            "thinking_level": thinking_level})
         started = time.monotonic()
+        if self.latency_s:
+            time.sleep(self.latency_s)
         payload = self._next(user_input, schema)
 
         if isinstance(payload, Exception):

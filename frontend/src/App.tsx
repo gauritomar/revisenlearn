@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 
 import { api, type AppMeta } from './lib/api'
+import { useOpenLesson } from './lib/openLesson'
 import { useUI } from './store/ui'
 import { Header } from './components/Header'
 import { LeftSidebar } from './components/LeftSidebar'
@@ -46,6 +47,9 @@ export function App() {
 
   const leftCollapsed = useUI((s) => s.leftCollapsed)
   const rightCollapsed = useUI((s) => s.rightCollapsed)
+  const narrowPanel = useUI((s) => s.narrowPanel)
+  const setNarrowPanel = useUI((s) => s.setNarrowPanel)
+  const activeLessonId = useUI((s) => s.activeLessonId)
   const activeNoteId = useUI((s) => s.activeNoteId)
   const activeResourceId = useUI((s) => s.activeResourceId)
   const activeDate = useUI((s) => s.activeDate)
@@ -59,6 +63,8 @@ export function App() {
   const [narrow, setNarrow] = useState(
     () => typeof window !== 'undefined' && window.innerWidth < COLLAPSE_BELOW,
   )
+
+  useLessonRoute(activeLessonId)
 
   useEffect(() => {
     const mq = window.matchMedia(`(max-width: ${COLLAPSE_BELOW - 1}px)`)
@@ -94,6 +100,7 @@ export function App() {
 
   // Below 900px the sidebars overlay the content rather than squeezing it, so
   // the editor stays the dominant element and the page never scrolls sideways.
+  // Consolidated addendum §6: overlay-style, and only one open at a time.
   const showLeft = !leftCollapsed && !narrow
   const showRight = !rightCollapsed && !narrow
 
@@ -101,12 +108,13 @@ export function App() {
   // open surface keeps winning and the tab appears to do nothing.
   const goToView = (next: string) => {
     clearActive()
+    setNarrowPanel(null)
     setView(next)
   }
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
-      <Header meta={meta} view={view} onView={goToView} />
+      <Header meta={meta} view={view} onView={goToView} narrow={narrow} />
 
       <div className="flex min-h-0 flex-1">
         {showLeft && <LeftSidebar />}
@@ -125,10 +133,23 @@ export function App() {
         {showRight && <RightSidebar meta={meta} />}
       </div>
 
-      {narrow && !leftCollapsed && (
-        <div className="fixed inset-y-0 left-0 top-14 z-40 shadow-xl">
-          <LeftSidebar />
-        </div>
+      {narrow && narrowPanel !== null && (
+        <>
+          <div
+            className="fixed inset-0 top-14 z-30 bg-ink/10"
+            onMouseDown={() => setNarrowPanel(null)}
+            role="presentation"
+          />
+          <div
+            data-testid={`overlay-${narrowPanel}`}
+            className={[
+              'fixed inset-y-0 top-14 z-40 shadow-xl',
+              narrowPanel === 'left' ? 'left-0' : 'right-0',
+            ].join(' ')}
+          >
+            {narrowPanel === 'left' ? <LeftSidebar /> : <RightSidebar meta={meta} />}
+          </div>
+        </>
       )}
 
       <CommandPalette />
@@ -171,8 +192,9 @@ function NotesEmpty() {
     <div className="mx-auto w-full max-w-3xl px-4 py-6 sm:px-6" data-testid="notes-empty">
       <h2 className="text-xl font-semibold tracking-tight text-ink">Notes</h2>
       <p className="mt-1 text-[0.875rem] leading-relaxed text-muted">
-        Pick a subtopic in the sidebar to open today&rsquo;s note, or open a
-        resource to write against it.
+        Open a lesson in the sidebar to write against it &mdash; each lesson has
+        one continuous note. Resources and calendar days have their own notes
+        too.
       </p>
       <button
         type="button"
@@ -183,4 +205,49 @@ function NotesEmpty() {
       </button>
     </div>
   )
+}
+
+
+/** Consolidated addendum §3 — "real page navigation (e.g. route
+ *  `/lessons/{id}`), not an inline pane swap."
+ *
+ *  The app is a single local window with no router, so the route lives in the
+ *  hash: opening a lesson pushes `#/lessons/12`, which means Back works, the
+ *  URL says where you are, and a reload lands on the same note. Everything
+ *  else in the app stays on the shell's own state.
+ */
+function useLessonRoute(activeLessonId: number | null) {
+  const openLesson = useOpenLesson()
+  const clearActive = useUI((s) => s.clearActive)
+
+  // State → URL.
+  useEffect(() => {
+    const wanted = activeLessonId === null ? '' : `#/lessons/${activeLessonId}`
+    if (window.location.hash === wanted) return
+    if (wanted) window.history.pushState(null, '', wanted)
+    else window.history.pushState(null, '', window.location.pathname)
+  }, [activeLessonId])
+
+  // URL → state, for Back, Forward and a reload.
+  useEffect(() => {
+    const apply = () => {
+      const match = /^#\/lessons\/(\d+)$/.exec(window.location.hash)
+      const state = useUI.getState()
+      if (match) {
+        const id = Number(match[1])
+        if (state.activeLessonId !== id) void openLesson(id)
+      } else if (state.activeLessonId !== null) {
+        clearActive()
+      }
+    }
+    apply()
+    window.addEventListener('popstate', apply)
+    window.addEventListener('hashchange', apply)
+    return () => {
+      window.removeEventListener('popstate', apply)
+      window.removeEventListener('hashchange', apply)
+    }
+    // Runs once: the listeners read live state themselves.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 }

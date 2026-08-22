@@ -19,14 +19,24 @@ const NAV: Array<{ label: string; phase: number }> = [
   { label: 'Graph', phase: 8 },
 ]
 
-export function Header({ meta, view, onView }: {
+export function Header({ meta, view, onView, narrow }: {
   meta: AppMeta | undefined
   view: string
   onView: (v: string) => void
+  /** Below ~900px the panels overlay from the header, one at a time (§6). */
+  narrow?: boolean
 }) {
   const setPalette = useUI((s) => s.setPalette)
   const toggleLeft = useUI((s) => s.toggleLeft)
+  const toggleRight = useUI((s) => s.toggleRight)
+  const narrowPanel = useUI((s) => s.narrowPanel)
+  const setNarrowPanel = useUI((s) => s.setNarrowPanel)
   const currentPhase = meta?.phase ?? 1
+
+  const openPanel = (side: 'left' | 'right') =>
+    narrow
+      ? setNarrowPanel(narrowPanel === side ? null : side)
+      : (side === 'left' ? toggleLeft() : toggleRight())
 
   return (
     <header
@@ -35,8 +45,9 @@ export function Header({ meta, view, onView }: {
     >
       <button
         type="button"
-        onClick={toggleLeft}
+        onClick={() => openPanel('left')}
         aria-label="Toggle subject sidebar"
+        aria-pressed={narrow ? narrowPanel === 'left' : undefined}
         data-testid="toggle-left-sidebar"
         className="grid size-8 shrink-0 place-items-center rounded-md text-muted transition hover:bg-sunken hover:text-ink"
       >
@@ -106,6 +117,22 @@ export function Header({ meta, view, onView }: {
             <path d="M10.5 10.5 14 14" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
           </svg>
           <kbd className="hidden font-ui text-[0.6875rem] tracking-wide sm:inline">⌘K</kbd>
+        </button>
+
+        {/* §6 — the right panel's own toggle, so a narrow screen can reach
+            the checklist without losing the note. */}
+        <button
+          type="button"
+          onClick={() => openPanel('right')}
+          aria-label="Toggle note panel"
+          aria-pressed={narrow ? narrowPanel === 'right' : undefined}
+          data-testid="toggle-right-sidebar"
+          className="grid size-8 shrink-0 place-items-center rounded-md text-muted transition hover:bg-sunken hover:text-ink"
+        >
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+            <rect x="2" y="3" width="12" height="10" rx="1.5" stroke="currentColor" strokeWidth="1.3" />
+            <path d="M10 3v10" stroke="currentColor" strokeWidth="1.3" />
+          </svg>
         </button>
 
         <HeaderLink label="Usage" phase={9} currentPhase={currentPhase}

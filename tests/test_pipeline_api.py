@@ -104,15 +104,28 @@ def test_nothing_to_process_is_refused(pc) -> None:
     assert pc.post("/api/pipeline/run", json={}).status_code == 409
 
 
-def test_two_jobs_cannot_run_at_once(pc) -> None:
-    _note(pc)
-    first = pc.post("/api/pipeline/run", json={}).json()
+def test_two_jobs_cannot_run_at_once(db_path: Path) -> None:
+    """§8 — one job at a time.
 
-    second = pc.post("/api/pipeline/run", json={})
-    assert second.status_code == 409
-    assert "already in flight" in second.json()["detail"]
+    The mock answers in microseconds, so racing two HTTP calls against it is a
+    coin toss: the first job can finish before the second request is even
+    written. RNL_MOCK_LATENCY_MS holds each model call open long enough for
+    the second request to land while the first is genuinely in flight.
+    """
+    instance = start_app(db_path, extra_env={"RNL_LLM_PROVIDER": "mock",
+                                             "RNL_MOCK_LATENCY_MS": "400"})
+    try:
+        with httpx.Client(base_url=instance.base_url, timeout=60) as pc:
+            _note(pc)
+            first = pc.post("/api/pipeline/run", json={}).json()
 
-    _wait_for(pc, first["id"])
+            second = pc.post("/api/pipeline/run", json={})
+            assert second.status_code == 409
+            assert "already in flight" in second.json()["detail"]
+
+            _wait_for(pc, first["id"])
+    finally:
+        instance.stop()
 
 
 def test_a_job_can_be_scoped_to_a_subject(pipeline_app, pc) -> None:

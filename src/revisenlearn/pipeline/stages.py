@@ -110,6 +110,25 @@ class JobContext:
 # Job creation
 # --------------------------------------------------------------------------
 
+#: Block types that carry no thinking worth extracting. A `date_divider` is a
+#: marker the app wrote itself (consolidated addendum §3), and an empty
+#: checkbox is a line the user has not written yet — neither is worth paying a
+#: model to read.
+NOT_WORTH_SENDING = {"date_divider", "divider"}
+
+
+def _has_content(block: NoteBlock) -> bool:
+    if block.block_type in NOT_WORTH_SENDING:
+        return False
+    text = (block.text or "").strip()
+    if block.block_type == "checklist_item":
+        from ..checklist import parse_checkbox
+
+        parsed = parse_checkbox(text)
+        text = parsed[1] if parsed else text
+    return bool(text.strip())
+
+
 def unprocessed_blocks(session: Session,
                        subject_id: int | None = None) -> list[NoteBlock]:
     """Blocks that are new or edited-since-processed (spec §4.2)."""
@@ -125,8 +144,7 @@ def unprocessed_blocks(session: Session,
         block
         for block in session.exec(stmt.order_by(NoteBlock.note_id,
                                                 NoteBlock.position)).all()
-        if block.processed_hash != block.content_hash
-        and (block.text or "").strip()
+        if block.processed_hash != block.content_hash and _has_content(block)
     ]
 
 

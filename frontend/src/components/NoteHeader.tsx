@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
-import { api, type Note } from '../lib/api'
+import { api, type Note, type Subject } from '../lib/api'
+import { useOpenLesson } from '../lib/openLesson'
 import { useUI } from '../store/ui'
 import { ProcessNotes } from './ProcessNotes'
 
@@ -18,6 +19,14 @@ export function NoteHeader({ note, saveState }: {
 }) {
   const qc = useQueryClient()
   const openSubtopic = useUI((s) => s.openSubtopic)
+  const openLesson = useOpenLesson()
+  const [moving, setMoving] = useState(false)
+  const [naming, setNaming] = useState(false)
+
+  // Consolidated addendum §3 — "A note tied to a Lesson has no name of its
+  // own — it opens under the Lesson's name in the breadcrumb/header."
+  const { data: subjects = [] } = useQuery({ queryKey: ['subjects'], queryFn: api.subjects })
+  const lesson = note.lesson_id === null ? null : findLesson(subjects, note.lesson_id)
 
   // Sibling notes: same subtopic, same day. Only meaningful for subtopic
   // notes — a resource note is one per resource per day by definition.
@@ -37,14 +46,19 @@ export function NoteHeader({ note, saveState }: {
     },
   })
 
+  // §3 — an additional note under the same lesson is "a deliberate hard
+  // split, not the default", and "gets a real user-provided name, never an
+  // auto-generated 'Note 2'". So this always asks for one.
   const addNote = useMutation({
-    mutationFn: () =>
+    mutationFn: (title: string) =>
       api.createNote({
         subtopic_id: note.subtopic_id,
+        topic_id: note.topic_id,
         study_date: note.study_date,
-        title: `${note.title} (${siblings.length + 1})`,
+        title,
       }),
     onSuccess: async (created) => {
+      setNaming(false)
       await qc.invalidateQueries({ queryKey: ['notes'] })
       qc.setQueryData(['note', created.id], created)
       openSubtopic(note.subtopic_id ?? -1, created.id)
@@ -55,14 +69,27 @@ export function NoteHeader({ note, saveState }: {
 
   return (
     <div className="mb-4 border-b border-line-soft pb-3">
+      {lesson && (
+        <p data-testid="note-breadcrumb" className="mb-1 text-[0.75rem] text-faint">
+          {lesson.path}
+        </p>
+      )}
+
       <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-        <EditableTitle
-          key={note.id}
-          value={note.title}
-          onCommit={(title) => {
-            if (title && title !== note.title) rename.mutate(title)
-          }}
-        />
+        {lesson ? (
+          // The lesson names the note; renaming happens on the lesson.
+          <h2 data-testid="note-title" className="text-lg font-semibold tracking-tight text-ink">
+            {lesson.name}
+          </h2>
+        ) : (
+          <EditableTitle
+            key={note.id}
+            value={note.title}
+            onCommit={(title) => {
+              if (title && title !== note.title) rename.mutate(title)
+            }}
+          />
+        )}
         <time
           data-testid="note-date"
           dateTime={note.study_date}
@@ -80,6 +107,19 @@ export function NoteHeader({ note, saveState }: {
       <div className="mt-2.5 flex flex-wrap items-center gap-2">
         {/* Spec §14 — Process notes, showing the unprocessed count. */}
         <ProcessNotes pendingHint={pending} />
+
+        {/* §5 — "Move to…" reaches the picker from inside the note, not only
+            from the sidebar. */}
+        {lesson && (
+          <button
+            type="button"
+            onClick={() => setMoving(true)}
+            data-testid="move-lesson"
+            className="rounded-md px-2 py-1 text-[0.75rem] text-muted transition hover:bg-sunken hover:text-ink"
+          >
+            Move to…
+          </button>
+        )}
 
         {note.resource_id === null && note.subtopic_id !== null && (
           <>
@@ -103,17 +143,172 @@ export function NoteHeader({ note, saveState }: {
                 ))}
               </div>
             )}
-            <button
-              type="button"
-              onClick={() => addNote.mutate()}
-              disabled={addNote.isPending}
-              data-testid="new-note"
-              className="rounded-md px-2 py-1 text-[0.75rem] text-muted transition hover:bg-sunken hover:text-ink disabled:opacity-50"
-            >
-              + New note
-            </button>
+            {naming ? (
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault()
+                  const input = e.currentTarget.elements.namedItem('title') as HTMLInputElement
+                  const title = input.value.trim()
+                  if (title) addNote.mutate(title)
+                }}
+                className="flex items-center gap-1"
+              >
+                <input
+                  name="title"
+                  autoFocus
+                  data-testid="new-note-name"
+                  placeholder="Name this note"
+                  onKeyDown={(e) => { if (e.key === 'Escape') setNaming(false) }}
+                  className="w-40 rounded border border-accent bg-surface px-1.5 py-0.5 text-[0.75rem] text-ink outline-none"
+                />
+                <button
+                  type="submit"
+                  disabled={addNote.isPending}
+                  data-testid="new-note-create"
+                  className="rounded bg-accent px-1.5 py-0.5 text-[0.6875rem] font-medium text-white disabled:opacity-50"
+                >
+                  Create
+                </button>
+              </form>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setNaming(true)}
+                data-testid="new-note"
+                className="rounded-md px-2 py-1 text-[0.75rem] text-muted transition hover:bg-sunken hover:text-ink"
+              >
+                + New note
+              </button>
+            )}
           </>
         )}
+      </div>
+
+      {moving && lesson && (
+        <MovePicker
+          lessonId={lesson.id}
+          subjects={subjects}
+          onClose={() => setMoving(false)}
+          onMoved={async () => {
+            setMoving(false)
+            await qc.invalidateQueries({ queryKey: ['subjects'] })
+            await qc.invalidateQueries({ queryKey: ['roadmap'] })
+            await openLesson(lesson.id)
+          }}
+        />
+      )}
+    </div>
+  )
+}
+
+/** Where a lesson sits, for the breadcrumb. */
+function findLesson(subjects: Subject[], lessonId: number) {
+  for (const subject of subjects) {
+    for (const topic of subject.topics) {
+      for (const lesson of topic.lessons) {
+        if (lesson.id === lessonId) {
+          return { ...lesson, path: `${subject.name} › ${topic.name}` }
+        }
+      }
+      for (const subtopic of topic.subtopics) {
+        for (const lesson of subtopic.lessons) {
+          if (lesson.id === lessonId) {
+            return {
+              ...lesson,
+              path: `${subject.name} › ${topic.name} › ${subtopic.name}`,
+            }
+          }
+        }
+      }
+    }
+  }
+  return null
+}
+
+/** §5 — "a **"Move to..."** action … that reparents it to a different
+ *  Subject/Topic/Subtopic via a picker — covers reordering without requiring
+ *  precise drag targeting." */
+function MovePicker({ lessonId, subjects, onClose, onMoved }: {
+  lessonId: number
+  subjects: Subject[]
+  onClose: () => void
+  onMoved: () => void | Promise<void>
+}) {
+  const [query, setQuery] = useState('')
+
+  const destinations: Array<{
+    key: string; path: string; topicId: number; subtopicId: number | null
+  }> = []
+  for (const subject of subjects) {
+    for (const topic of subject.topics) {
+      destinations.push({
+        key: `t-${topic.id}`, path: `${subject.name} › ${topic.name}`,
+        topicId: topic.id, subtopicId: null,
+      })
+      for (const subtopic of topic.subtopics) {
+        destinations.push({
+          key: `st-${subtopic.id}`,
+          path: `${subject.name} › ${topic.name} › ${subtopic.name}`,
+          topicId: topic.id, subtopicId: subtopic.id,
+        })
+      }
+    }
+  }
+  const q = query.trim().toLowerCase()
+  const shown = (q ? destinations.filter((d) => d.path.toLowerCase().includes(q)) : destinations)
+    .slice(0, 10)
+
+  const move = useMutation({
+    mutationFn: (d: { topicId: number; subtopicId: number | null }) =>
+      api.moveTreeItem({
+        kind: 'lesson', id: lessonId,
+        parent_id: d.topicId, subtopic_id: d.subtopicId, position: 9999,
+      }),
+    onSuccess: onMoved,
+  })
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-start justify-center bg-ink/15 px-4 pt-[14vh] backdrop-blur-[2px]"
+      onMouseDown={(e) => { if (e.target === e.currentTarget) onClose() }}
+      role="presentation"
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="Move this lesson"
+        data-testid="move-picker"
+        className="w-full max-w-md rounded-xl border border-line bg-surface p-4 shadow-xl"
+      >
+        <h2 className="text-[0.9375rem] font-semibold tracking-tight text-ink">Move to…</h2>
+        <input
+          autoFocus
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Escape') onClose() }}
+          data-testid="move-search"
+          placeholder="Search topics and subtopics…"
+          className="mt-3 w-full rounded-md border border-line bg-paper px-2.5 py-1.5 text-[0.8125rem] text-ink outline-none transition placeholder:text-faint focus:border-accent"
+        />
+        <ul className="mt-2 max-h-56 overflow-y-auto rounded-md border border-line-soft">
+          {shown.length === 0 ? (
+            <li className="px-2.5 py-2 text-[0.75rem] text-faint">Nothing matches.</li>
+          ) : (
+            shown.map((d) => (
+              <li key={d.key}>
+                <button
+                  type="button"
+                  disabled={move.isPending}
+                  onClick={() => move.mutate(d)}
+                  data-testid={`move-to-${d.key}`}
+                  className="w-full px-2.5 py-1.5 text-left text-[0.8125rem] text-ink transition hover:bg-sunken disabled:opacity-50"
+                >
+                  {d.path}
+                </button>
+              </li>
+            ))
+          )}
+        </ul>
       </div>
     </div>
   )

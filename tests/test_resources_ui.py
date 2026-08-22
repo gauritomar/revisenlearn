@@ -11,6 +11,8 @@ import datetime as dt
 import httpx
 import pytest
 
+from conftest import open_lesson
+
 pytestmark = pytest.mark.ui
 
 TODAY = dt.date.today().isoformat()
@@ -25,11 +27,27 @@ def _branch(base_url: str) -> dict:
         subtopic = c.post(
             "/api/subtopics", json={"topic_id": topic["id"], "name": "Hybrid search"}
         ).json()
-    return {"subject": subject, "topic": topic, "subtopic": subtopic}
+        # §3 — a note is opened by clicking a Lesson, so the branch has one.
+        lesson = c.post("/api/lessons", json={
+            "topic_id": topic["id"], "subtopic_id": subtopic["id"],
+            "name": "Hybrid retrieval in practice",
+        }).json()
+    return {"subject": subject, "topic": topic, "subtopic": subtopic,
+            "lesson": lesson}
+
+
+def _dashboard(page) -> None:
+    """Consolidated addendum §7 — the app opens on Calendar now. Everything
+    below is about the dashboard's resource surfaces, so each test says so
+    rather than relying on where the app happens to land."""
+    page.get_by_test_id("header-home").click()
+    page.get_by_test_id("dashboard").wait_for(state="visible")
+
 
 
 def test_add_a_resource_by_pasting_a_link(page, app) -> None:
     """§5.1 — a single input, and Enter saves it."""
+    _dashboard(page)
     page.get_by_test_id("dash-add-resource").click()
     page.get_by_test_id("resource-add").wait_for(state="visible")
 
@@ -48,6 +66,7 @@ def test_add_a_resource_by_pasting_a_link(page, app) -> None:
 
 
 def test_add_a_resource_by_typing_a_title(page, app) -> None:
+    _dashboard(page)
     page.get_by_test_id("dash-add-resource").click()
     page.get_by_test_id("resource-input").fill("Work through CLRS chapter 4")
     page.get_by_test_id("resource-add-submit").click()
@@ -60,6 +79,7 @@ def test_add_a_resource_by_typing_a_title(page, app) -> None:
 
 def test_enter_submits_the_quick_add(page, app) -> None:
     """Five seconds means not reaching for the mouse."""
+    _dashboard(page)
     page.get_by_test_id("dash-add-resource").click()
     page.get_by_test_id("resource-input").fill("Skim the FSRS paper")
     page.keyboard.press("Enter")
@@ -72,6 +92,7 @@ def test_quick_add_placement_defaults_to_last_used(page, app) -> None:
     """§5.1 — pickers default to the last-used values."""
     branch = _branch(app.base_url)
     page.reload(wait_until="networkidle")
+    _dashboard(page)
 
     # First add: choose a placement explicitly.
     page.get_by_test_id("dash-add-resource").click()
@@ -104,6 +125,7 @@ def test_quick_add_placement_defaults_to_last_used(page, app) -> None:
 def test_the_topic_picker_is_gated_on_the_subject(page, app) -> None:
     _branch(app.base_url)
     page.reload(wait_until="networkidle")
+    _dashboard(page)
 
     page.get_by_test_id("dash-add-resource").click()
     page.get_by_test_id("resource-add").wait_for(state="visible")
@@ -124,6 +146,7 @@ def test_clicking_a_resource_opens_the_split_view(page, app) -> None:
         ).json()
 
     page.reload(wait_until="networkidle")
+    _dashboard(page)
     page.get_by_test_id(f"resource-{resource['id']}").first.click()
 
     split = page.get_by_test_id("resource-split")
@@ -150,6 +173,7 @@ def test_writing_in_the_resource_note_persists(page, app) -> None:
         ).json()
 
     page.reload(wait_until="networkidle")
+    _dashboard(page)
     page.get_by_test_id(f"resource-{resource['id']}").first.click()
     editor = page.get_by_test_id("note-editor")
     editor.wait_for(state="visible")
@@ -175,6 +199,7 @@ def test_status_change_from_the_split_view(page, app) -> None:
         resource = c.post("/api/resources", json={"title": "A course"}).json()
 
     page.reload(wait_until="networkidle")
+    _dashboard(page)
     page.get_by_test_id(f"resource-{resource['id']}").first.click()
     page.get_by_test_id("resource-status").wait_for(state="visible")
 
@@ -197,6 +222,7 @@ def test_progress_note_is_saved_on_blur(page, app) -> None:
         resource = c.post("/api/resources", json={"title": "Long book"}).json()
 
     page.reload(wait_until="networkidle")
+    _dashboard(page)
     page.get_by_test_id(f"resource-{resource['id']}").first.click()
     note_field = page.get_by_test_id("progress-note")
     note_field.wait_for(state="visible")
@@ -219,11 +245,11 @@ def test_a_resource_note_and_a_subtopic_note_do_not_collide(page, app) -> None:
         ).json()
 
     page.reload(wait_until="networkidle")
+    _dashboard(page)
 
     # Write in the subtopic's own note.
-    page.get_by_test_id("subject-GenAI").click()
-    page.get_by_test_id("topic-Retrieval").click()
-    page.get_by_test_id("subtopic-Hybrid search").click()
+    open_lesson(page, "GenAI", "Retrieval", "Hybrid search",
+                "Hybrid retrieval in practice")
     page.get_by_test_id("note-editor").wait_for(state="visible")
     page.get_by_test_id("note-editor").click()
     page.keyboard.type("Subtopic note text")
@@ -269,6 +295,7 @@ def test_dashboard_shows_study_next_and_continue_learning(page, app) -> None:
         c.post("/api/resources", json={"title": "Queued up", "status": "next"})
 
     page.reload(wait_until="networkidle")
+    _dashboard(page)
 
     continuing = page.get_by_test_id("dash-continue-learning")
     continuing.wait_for(state="visible")
@@ -295,6 +322,7 @@ def test_dashboard_todays_notes_lists_what_was_written(page, app) -> None:
         )
 
     page.reload(wait_until="networkidle")
+    _dashboard(page)
     section = page.get_by_test_id("dash-todays-notes")
     section.wait_for(state="visible")
     assert "Hybrid search" in section.inner_text()
@@ -307,7 +335,9 @@ def test_dashboard_todays_notes_lists_what_was_written(page, app) -> None:
 
 
 def test_right_sidebar_shows_the_current_resource(page, app) -> None:
-    """Spec §14 — the right sidebar in Notes shows the current resource."""
+    """Spec §14 — the right sidebar in Notes shows the current resource. The
+    consolidated addendum §6 moved it under the Links tab, first in the list
+    and marked as this note's own."""
     with httpx.Client(base_url=app.base_url, timeout=30) as c:
         resource = c.post(
             "/api/resources",
@@ -319,9 +349,11 @@ def test_right_sidebar_shows_the_current_resource(page, app) -> None:
         )
 
     page.reload(wait_until="networkidle")
+    _dashboard(page)
     page.get_by_test_id(f"resource-{resource['id']}").first.click()
     page.get_by_test_id("resource-split").wait_for(state="visible")
 
+    page.get_by_test_id("right-tab-resources").click()
     panel = page.get_by_test_id("sidebar-resource")
     panel.wait_for(state="visible", timeout=10_000)
     text = panel.inner_text()
@@ -330,16 +362,18 @@ def test_right_sidebar_shows_the_current_resource(page, app) -> None:
     assert "stopped at 22:15" in text
 
 
-def test_right_sidebar_says_unlinked_for_a_subtopic_note(page, app) -> None:
+def test_the_links_tab_is_empty_for_a_note_with_no_urls(page, app) -> None:
+    """Consolidated addendum §6 — the right panel is tabbed now, and Links
+    lists what §4 detected. A note with no URLs has nothing there, and says
+    what would put something there."""
     branch = _branch(app.base_url)
     page.reload(wait_until="networkidle")
 
-    page.get_by_test_id("subject-GenAI").click()
-    page.get_by_test_id("topic-Retrieval").click()
-    page.get_by_test_id("subtopic-Hybrid search").click()
-    page.get_by_test_id("note-editor").wait_for(state="visible")
+    open_lesson(page, "GenAI", "Retrieval", "Hybrid search",
+                "Hybrid retrieval in practice")
 
+    page.get_by_test_id("right-tab-resources").click()
     sidebar = page.get_by_test_id("right-sidebar")
-    assert "Not linked to a resource." in sidebar.inner_text()
-    assert page.get_by_test_id("sidebar-resource").count() == 0
+    assert "No links here yet" in sidebar.inner_text()
+    assert page.get_by_test_id("resources-tab").count() == 0
     assert branch["subtopic"]["name"] == "Hybrid search"

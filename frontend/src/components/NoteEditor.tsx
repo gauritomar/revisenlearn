@@ -3,8 +3,12 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { EditorContent, useEditor } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import Placeholder from '@tiptap/extension-placeholder'
+import TaskList from '@tiptap/extension-task-list'
+import TaskItem from '@tiptap/extension-task-item'
 
 import { api, type Note } from '../lib/api'
+import { CheckboxInput } from '../lib/checkboxInput'
+import { DateDivider } from '../lib/dateDivider'
 import { blocksToDoc, docToBlocks, reconcile } from '../lib/blocks'
 import { BlockIndicators, buildStateIndex } from '../lib/blockIndicators'
 import { NoteHeader } from './NoteHeader'
@@ -43,6 +47,14 @@ export function NoteEditor({ noteId }: { noteId: number }) {
         // stays off.
         heading: { levels: [1, 2, 3] },
       }),
+      // Consolidated addendum §2 — "Typing `- [ ] text` creates one".
+      // TaskList's own input rule fires on that exact prefix, so the syntax
+      // works in the editor as well as on the server (where a paste of the
+      // same text is parsed on save).
+      TaskList,
+      TaskItem.configure({ nested: true }),
+      CheckboxInput,
+      DateDivider,
       Placeholder.configure({ placeholder: 'Start writing. Bullets are fastest.' }),
       BlockIndicators.configure({ getIndex: () => stateIndexRef.current }),
     ],
@@ -67,6 +79,11 @@ export function NoteEditor({ noteId }: { noteId: number }) {
       // A save changes what the pipeline owes, so the Process notes count is
       // now stale (spec §14: the button carries that count).
       void qc.invalidateQueries({ queryKey: ['pipeline-pending'] })
+      // …and it may have just created or removed a checklist item, which the
+      // right panel, the sidebar counts and the Roadmap all read (§2).
+      void qc.invalidateQueries({ queryKey: ['note-panel', current.id] })
+      void qc.invalidateQueries({ queryKey: ['subjects'] })
+      void qc.invalidateQueries({ queryKey: ['roadmap'] })
       setSaveState('saved')
     } catch {
       // Principle §1.2 — never lose what was typed. The document stays in the

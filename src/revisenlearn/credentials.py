@@ -57,6 +57,12 @@ class KeyStatus:
 
 
 def _from_keyring() -> str | None:
+    # The Keychain is machine-level: a test harness can clear the environment
+    # and point RNL_CREDS_DIR somewhere empty, but it cannot un-import a key
+    # the developer stored on their own Mac. This makes "no key anywhere" a
+    # state the suite can actually reach.
+    if os.environ.get("RNL_NO_KEYCHAIN") == "1":
+        return None
     try:
         import keyring
 

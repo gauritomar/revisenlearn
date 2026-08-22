@@ -90,6 +90,56 @@ body {
 .note-prose ol { list-style: decimal; padding-left: 1.4rem; }
 .note-prose li { margin-top: 0.2rem; }
 .note-prose li::marker { color: var(--color-faint); }
+
+/* Consolidated addendum §2 — checklist items, written as `- [ ]` and shown as
+   real boxes. No bullet marker: the box is the marker. */
+.note-prose ul[data-type='taskList'] {
+  list-style: none;
+  padding-left: 0.1rem;
+}
+.note-prose ul[data-type='taskList'] li {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.55rem;
+}
+.note-prose ul[data-type='taskList'] li > label {
+  flex: 0 0 auto;
+  margin-top: 0.42rem;      /* sits on the first line, not above it */
+  user-select: none;
+}
+.note-prose ul[data-type='taskList'] li > div { flex: 1 1 auto; min-width: 0; }
+.note-prose ul[data-type='taskList'] input[type='checkbox'] {
+  accent-color: var(--color-accent);
+  width: 0.95rem;
+  height: 0.95rem;
+}
+.note-prose ul[data-type='taskList'] li[data-checked='true'] > div {
+  color: var(--color-faint);
+  text-decoration: line-through;
+}
+/* One level of nesting only (§2), so the indent is a single step. */
+.note-prose ul[data-type='taskList'] ul[data-type='taskList'] {
+  padding-left: 1.35rem;
+}
+
+/* §3 — the automatic day marker in a note that spans months. */
+.note-prose .date-divider {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  margin-top: 1.6rem;
+  font-family: var(--font-ui);
+  font-size: 0.6875rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-faint);
+  user-select: none;
+}
+.note-prose .date-divider::after {
+  content: '';
+  flex: 1 1 auto;
+  border-top: 1px solid var(--color-line-soft);
+}
 .note-prose blockquote {
   border-left: 3px solid var(--color-line);
   padding-left: 0.9rem;

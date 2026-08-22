@@ -14,6 +14,8 @@ import datetime as dt
 import httpx
 import pytest
 
+from conftest import open_lesson
+
 TODAY = dt.date.today().isoformat()
 
 
@@ -26,13 +28,27 @@ def _branch(base_url: str) -> dict:
         subtopic = c.post(
             "/api/subtopics", json={"topic_id": topic["id"], "name": "Hybrid search"}
         ).json()
-    return {"subject": subject, "topic": topic, "subtopic": subtopic}
+        # Consolidated addendum §3 — the note the user opens belongs to a
+        # Lesson now, so the branch grows one.
+        lesson = c.post("/api/lessons", json={
+            "topic_id": topic["id"], "subtopic_id": subtopic["id"],
+            "name": "Hybrid retrieval in practice",
+        }).json()
+    return {"subject": subject, "topic": topic, "subtopic": subtopic,
+            "lesson": lesson}
 
 
 def _open_subtopic(page) -> None:
-    page.get_by_test_id("subject-GenAI").click()
-    page.get_by_test_id("topic-Retrieval").click()
-    page.get_by_test_id("subtopic-Hybrid search").click()
+    open_lesson(page, "GenAI", "Retrieval", "Hybrid search",
+                "Hybrid retrieval in practice")
+
+
+def _open_freeform_note(page, note_id: int) -> None:
+    """A note with no lesson — still fully valid (§3), reached the way the user
+    reaches one: through the calendar day it was written on."""
+    page.get_by_test_id("nav-calendar").click()
+    page.get_by_test_id(f"calendar-day-{TODAY}").click()
+    page.get_by_test_id(f"day-note-{note_id}").click()
     page.get_by_test_id("note-editor").wait_for(state="visible")
 
 
@@ -147,7 +163,7 @@ def test_process_notes_count_includes_edited_blocks(page, app) -> None:
     branch = _branch(app.base_url)
     with httpx.Client(base_url=app.base_url, timeout=30) as c:
         note = c.post(
-            "/api/notes/ensure", json={"subtopic_id": branch["subtopic"]["id"]}
+            "/api/notes/ensure", json={"lesson_id": branch["lesson"]["id"]}
         ).json()
         c.put(
             f"/api/notes/{note['id']}/blocks",
@@ -188,9 +204,14 @@ def test_process_notes_count_includes_edited_blocks(page, app) -> None:
 
 @pytest.mark.ui
 def test_renaming_a_note_in_the_editor(page, app) -> None:
-    _branch(app.base_url)
+    """§4.1 — a freeform note is renameable in place. (A lesson's note is not:
+    §3 gives it the lesson's name and no name of its own.)"""
+    branch = _branch(app.base_url)
+    with httpx.Client(base_url=app.base_url, timeout=30) as c:
+        note = c.post("/api/notes/ensure",
+                      json={"subtopic_id": branch["subtopic"]["id"]}).json()
     page.reload(wait_until="networkidle")
-    _open_subtopic(page)
+    _open_freeform_note(page, note["id"])
 
     assert page.get_by_test_id("note-title").inner_text() == "Hybrid search"
 
@@ -212,9 +233,12 @@ def test_renaming_a_note_in_the_editor(page, app) -> None:
 
 @pytest.mark.ui
 def test_escape_cancels_a_rename(page, app) -> None:
-    _branch(app.base_url)
+    branch = _branch(app.base_url)
+    with httpx.Client(base_url=app.base_url, timeout=30) as c:
+        note = c.post("/api/notes/ensure",
+                      json={"subtopic_id": branch["subtopic"]["id"]}).json()
     page.reload(wait_until="networkidle")
-    _open_subtopic(page)
+    _open_freeform_note(page, note["id"])
 
     page.get_by_test_id("rename-note").click()
     field = page.get_by_test_id("note-title-input")
@@ -230,10 +254,15 @@ def test_escape_cancels_a_rename(page, app) -> None:
 
 @pytest.mark.ui
 def test_creating_and_switching_between_additional_notes(page, app) -> None:
-    """§4.1 — additional notes for the same day, switchable."""
-    _branch(app.base_url)
+    """§4.1 — additional notes for the same day, switchable. Consolidated
+    addendum §3 — an extra note "gets a real user-provided name, never an
+    auto-generated 'Note 2'", so creating one asks for that name."""
+    branch = _branch(app.base_url)
+    with httpx.Client(base_url=app.base_url, timeout=30) as c:
+        note = c.post("/api/notes/ensure",
+                      json={"subtopic_id": branch["subtopic"]["id"]}).json()
     page.reload(wait_until="networkidle")
-    _open_subtopic(page)
+    _open_freeform_note(page, note["id"])
 
     editor = page.get_by_test_id("note-editor")
     editor.click()
@@ -246,7 +275,14 @@ def test_creating_and_switching_between_additional_notes(page, app) -> None:
     )
 
     page.get_by_test_id("new-note").click()
+    page.get_by_test_id("new-note-name").fill("Dense retrieval only")
+    page.get_by_test_id("new-note-create").click()
     page.get_by_test_id("note-siblings").wait_for(state="visible", timeout=10_000)
+    page.wait_for_function(
+        "() => document.querySelector('[data-testid=note-title]')"
+        "?.textContent === 'Dense retrieval only'",
+        timeout=10_000,
+    )
 
     # The new note is empty and distinct.
     editor = page.get_by_test_id("note-editor")
@@ -292,6 +328,8 @@ def test_a_resource_note_has_no_sibling_controls(page, app) -> None:
         ).json()
 
     page.reload(wait_until="networkidle")
+    # The app lands on Calendar now (§7), and resources live on the dashboard.
+    page.get_by_test_id("header-home").click()
     page.get_by_test_id(f"resource-{resource['id']}").first.click()
     page.get_by_test_id("note-editor").wait_for(state="visible")
 
