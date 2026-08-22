@@ -138,3 +138,59 @@ mark {
   border-radius: 3px;
   padding: 0 2px;
 }
+
+/* ------------------------------------------------------------------
+   §4.2 processed-state indicators [LOCKED]
+
+   processed_hash == content_hash  -> pale blue left border (2px, #DBEAFE)
+                                      and a small `#` superscript
+   processed_hash != content_hash  -> amber left border and `#~`
+   processed_hash IS NULL          -> plain (no rule here at all)
+
+   The border sits in the left gutter rather than indenting the text, so
+   toggling state never reflows the line the user is writing on.
+   ------------------------------------------------------------------ */
+.note-prose [data-block-state] {
+  position: relative;
+  padding-left: 0.55rem;
+  margin-left: -0.75rem;
+  border-left: 2px solid transparent;
+}
+
+.note-prose [data-block-state]::before {
+  position: absolute;
+  left: -0.05rem;
+  top: -0.15em;
+  font-family: var(--font-ui);
+  font-size: 0.6rem;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: -0.02em;
+  pointer-events: none;
+  user-select: none;
+}
+
+.note-prose [data-block-state='processed'] {
+  border-left-color: var(--color-processed);
+}
+.note-prose [data-block-state='processed']::before {
+  content: '#';
+  color: #93B4E8;   /* the pale blue, darkened enough to read as a glyph */
+}
+
+.note-prose [data-block-state='stale'] {
+  border-left-color: var(--color-stale);
+}
+.note-prose [data-block-state='stale']::before {
+  content: '#~';
+  color: var(--color-stale);
+}
+
+/* List items carry their own marker, so shift the superscript clear of it. */
+.note-prose li[data-block-state] {
+  margin-left: 0;
+  padding-left: 0.45rem;
+}
+.note-prose li[data-block-state]::before {
+  left: -0.6rem;
+}

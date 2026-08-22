@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { EditorContent, useEditor } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
@@ -6,6 +6,7 @@ import Placeholder from '@tiptap/extension-placeholder'
 
 import { api, type Note } from '../lib/api'
 import { blocksToDoc, docToBlocks, reconcile } from '../lib/blocks'
+import { BlockIndicators, buildStateIndex } from '../lib/blockIndicators'
 
 /** Spec §4.1 — autosave is debounced 800ms after typing stops, plus on blur,
  *  plus every 30s while active. Spec §14.4 — Cmd/Ctrl+S forces a save. */
@@ -25,6 +26,15 @@ export function NoteEditor({ noteId }: { noteId: number }) {
   const noteRef = useRef<Note | undefined>(note)
   noteRef.current = note
 
+  // The §4.2 indicator index, rebuilt whenever the server tells us block
+  // states changed. Held in a ref so the ProseMirror plugin reads the current
+  // value rather than the one captured when the editor was created.
+  const stateIndexRef = useRef(buildStateIndex([]))
+  stateIndexRef.current = useMemo(
+    () => buildStateIndex(note?.blocks ?? []),
+    [note?.blocks],
+  )
+
   const editor = useEditor({
     extensions: [
       StarterKit.configure({
@@ -33,6 +43,7 @@ export function NoteEditor({ noteId }: { noteId: number }) {
         heading: { levels: [1, 2, 3] },
       }),
       Placeholder.configure({ placeholder: 'Start writing. Bullets are fastest.' }),
+      BlockIndicators.configure({ getIndex: () => stateIndexRef.current }),
     ],
     content: { type: 'doc', content: [{ type: 'paragraph' }] },
     editorProps: {
@@ -69,6 +80,13 @@ export function NoteEditor({ noteId }: { noteId: number }) {
     // user's cursor; key on the id and the server's updated_at instead.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editor, noteId])
+
+  // A save returns fresh block states, but the document itself has not
+  // changed, so ProseMirror has no reason to recompute decorations. Nudge it.
+  useEffect(() => {
+    if (!editor || editor.isDestroyed) return
+    editor.view.dispatch(editor.view.state.tr.setMeta('addToHistory', false))
+  }, [editor, note?.blocks])
 
   // Debounced autosave on every change.
   useEffect(() => {

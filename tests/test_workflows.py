@@ -423,6 +423,84 @@ def test_workflow_3_ui_autosave_fires_without_pressing_anything(page, app) -> No
     assert stored == ["Autosaved without pressing anything"]
 
 
+@pytest.mark.ui
+def test_workflow_3_ui_processed_and_stale_indicators_render(page, app) -> None:
+    """Spec §4.2 [LOCKED] — the indicator must be visible in the editor, not
+    just present in the API response: pale blue #DBEAFE border and a '#'
+    superscript when processed, amber and '#~' once edited."""
+    import sqlite3
+
+    with httpx.Client(base_url=app.base_url, timeout=30) as c:
+        branch = _make_branch(c)
+        note = c.post(
+            "/api/notes/ensure", json={"subtopic_id": branch["subtopic"]["id"]}
+        ).json()
+        c.put(
+            f"/api/notes/{note['id']}/blocks",
+            json={"blocks": [
+                {"id": None, "position": 0, "block_type": "bullet_list_item",
+                 "text": "Already processed bullet"},
+                {"id": None, "position": 1, "block_type": "bullet_list_item",
+                 "text": "Never processed bullet"},
+            ]},
+        )
+
+    # Mark only the first block processed (Phase 5's pipeline does this for real).
+    conn = sqlite3.connect(app.db_path)
+    conn.execute(
+        "UPDATE note_blocks SET processed_hash = content_hash WHERE position = 0"
+    )
+    conn.commit()
+    conn.close()
+
+    page.reload(wait_until="networkidle")
+    page.get_by_test_id("subject-GenAI").click()
+    page.get_by_test_id("topic-Retrieval").click()
+    page.get_by_test_id("subtopic-Hybrid search").click()
+    page.get_by_test_id("note-editor").wait_for(state="visible")
+
+    processed = page.locator('[data-block-state="processed"]')
+    processed.first.wait_for(state="visible", timeout=10_000)
+    assert processed.count() == 1
+    assert "Already processed" in processed.first.inner_text()
+
+    # The spec names this colour exactly.
+    border = processed.first.evaluate(
+        "el => getComputedStyle(el).borderLeftColor"
+    )
+    assert border == "rgb(219, 234, 254)", border  # #DBEAFE
+    marker = processed.first.evaluate(
+        "el => getComputedStyle(el, '::before').content"
+    )
+    assert marker == '"#"', marker
+
+    # The unprocessed block is plain — it carries no indicator at all.
+    assert page.locator('[data-block-state="stale"]').count() == 0
+    assert page.locator("[data-block-state]").count() == 1
+
+    # Now edit the processed block. It must go amber, not back to plain.
+    processed.first.click()
+    page.keyboard.press("End")
+    page.keyboard.type(" with an edit")
+    page.keyboard.press("Control+s")
+    page.wait_for_function(
+        "() => document.querySelector('[data-testid=save-status]')"
+        "?.dataset.state === 'saved'",
+        timeout=10_000,
+    )
+
+    stale = page.locator('[data-block-state="stale"]')
+    stale.first.wait_for(state="visible", timeout=10_000)
+    assert stale.count() == 1
+    stale_marker = stale.first.evaluate(
+        "el => getComputedStyle(el, '::before').content"
+    )
+    assert stale_marker == '"#~"', stale_marker
+
+    # And the header counter agrees.
+    assert "1 edited" in page.get_by_test_id("block-counter").inner_text()
+
+
 # ==========================================================================
 # Workflow 4 — User can search
 # ==========================================================================
