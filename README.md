@@ -4,7 +4,7 @@ A local-first study app. You write notes; the app turns them into durable
 concepts, then schedules them for review. Single user, single machine, no cloud,
 no auth, no Docker.
 
-**Status: Phases 1 and 2 complete.** See [Build status](#build-status).
+**Status: Phases 1–3 complete.** See [Build status](#build-status).
 
 ---
 
@@ -59,6 +59,13 @@ freely — they are only a starting point.
 Your data lives in `~/.revisenlearn/`. That directory is the whole app state;
 back it up and you have backed up everything.
 
+```
+~/.revisenlearn/
+  revisenlearn.db     the database
+  backups/            automatic nightly copies, 7 daily + 4 weekly
+  exports/            Markdown exports you asked for
+```
+
 ---
 
 ## API key setup
@@ -103,6 +110,21 @@ calendar shows what you wrote on any day.
 From Phase 5, the **Process notes** button turns what you wrote into concepts,
 and Phases 6–7 add the two review loops.
 
+### Backup and export
+
+A compacted copy of the database is written automatically at the first launch
+after 03:00 each day, into `~/.revisenlearn/backups/`. Seven daily and four
+weekly copies are kept. **Settings → Back up now** takes one on demand.
+
+**Settings → Export all notes as Markdown** writes one folder per
+Subject/Topic/Subtopic and one file per note, each with YAML front-matter
+giving its date and, where relevant, its resource. Those are plain files that
+need nothing from this app to read — which is the point. Export before anything
+risky.
+
+To restore: quit the app and copy a backup over `~/.revisenlearn/revisenlearn.db`
+(remove any `-wal` and `-shm` files beside it first).
+
 ### Keyboard
 
 | Key | Does |
@@ -122,7 +144,7 @@ question) arrive with the review loops in Phases 6 and 7.
 uv sync                      # Python deps
 cd frontend && npm install   # frontend deps
 
-uv run pytest                # all 111 tests
+uv run pytest                # all 164 tests
 uv run pytest -m "not ui"    # API + database only, no browser needed
 uv run pytest -m ui          # browser tests (needs: uv run playwright install chromium)
 
@@ -163,7 +185,7 @@ begins.
 |---|---|---|
 | 1 | Foundation | **done** |
 | 2 | Notes and resources | **done** |
-| 3 | Backup and export | not started |
+| 3 | Backup and export | **done** |
 | 4 | Embeddings and identity | not started |
 | 5 | LLM abstraction and pipeline | not started |
 | 6 | Coverage, review items, MCQs | not started |

@@ -167,3 +167,11 @@ All writes go through one `Session` factory with a short-lived transaction
 (`db.session_scope`). The pipeline worker thread takes an application-level
 `threading.Lock` (`db.write_lock`) around its transactions. One engine, one
 connection pool, never two.
+
+## Backups and export
+
+Neither adds a table. Backups are `VACUUM INTO` copies of this whole schema in
+`~/.revisenlearn/backups/`, named `revisenlearn-YYYYMMDD-HHMMSS.db`; retention
+is derived from those filenames, not from any stored state. The Markdown export
+reads `notes`, `note_blocks` and the hierarchy and writes plain files. See
+`DECISIONS.md` §7.

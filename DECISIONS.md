@@ -324,3 +324,86 @@ Both were caught by the browser tests rather than by reading the code:
   whenever the data actually arrives.
 - **Header tabs did not clear the open surface**, so clicking "Dashboard" while
   a note was open appeared to do nothing.
+
+---
+
+## 7. Phase 3 decisions
+
+### `VACUUM INTO`, not a file copy
+
+§17 names `VACUUM INTO` and it is the right primitive: SQLite writes a
+consistent, compacted copy from the inside, so it is safe against concurrent
+readers and cannot capture a half-written page the way `cp` can. It cannot run
+inside a transaction, so the backup connection is opened with `AUTOCOMMIT`, and
+it takes the application `write_lock` so it serialises against the pipeline
+worker that arrives in Phase 5.
+
+The target path is inlined into the SQL because `VACUUM INTO` has no parameter
+binding for it; single quotes are doubled, and the path is ours rather than
+user input.
+
+### Retention: last 7 days *with a backup*, not last 7 calendar days **[JUDGEMENT]**
+
+§17 says "retain 7 daily + 4 weekly" without saying what happens when you do
+not launch the app for a while. Counting calendar days would mean returning
+from a fortnight away, launching once, and finding the history expired — the
+opposite of what a backup is for. So the window is the seven most recent *days
+that have a backup*, then the four most recent ISO weeks not already covered by
+one of those days.
+
+Consequences worth knowing:
+
+- Several manual backups in one day collapse to that day's newest, so pressing
+  the button repeatedly cannot consume the whole daily window.
+- With a backup every single day, the daily window covers two ISO weeks, so a
+  long unbroken run keeps 7 + 3, not 7 + 4. That is the policy working, not a
+  bug; there is a test that says so.
+
+Deletion is deliberately narrow. Only files matching `revisenlearn-YYYYMMDD-HHMMSS.db`
+are ever considered, so anything else in the backups directory is untouched, and
+a freshly taken backup is protected from its own prune.
+
+### Nightly is a startup check, not a scheduler
+
+§17 says "nightly **at first launch** after 03:00". The app is not a daemon, so
+there is no timer: on startup it asks whether any backup exists newer than the
+most recent 03:00 that has passed, and takes one if not. A failed backup is
+logged loudly and swallowed — it must never stop the window opening.
+`RNL_NO_NIGHTLY_BACKUP=1` disables it, which is how the test-suite avoids every
+app start writing one.
+
+### Export layout **[JUDGEMENT]**
+
+§17 fixes the structure but not the destination, so exports go to
+`~/.revisenlearn/exports/export-<timestamp>/` unless a destination is given, and
+a relative destination is rejected rather than resolved against whatever
+directory the server happened to start in.
+
+Choices inside that:
+
+- Notes with no subject go to `_unfiled/` rather than being skipped. The point
+  of an insurance policy is that nothing is dropped for being untidy.
+- Filenames are `YYYY-MM-DD-Title.md`, sorted usefully by name alone.
+- Path components are sanitised for macOS *and* Windows, including the reserved
+  `CON`/`PRN`/`COM1` names, because a restore may well happen on another
+  machine years later.
+- Two notes sharing a title on the same day (allowed by §4.1) get `-2`, `-3`
+  suffixes rather than overwriting each other.
+- A `README.md` is written into every export explaining the layout, so the
+  folder makes sense to someone who has never run this app.
+- Front-matter values are quoted and escaped; a test round-trips them through a
+  real YAML parser.
+
+### A bug worth recording
+
+`render_blocks` originally built a flat list of lines and then `zip`ped it
+against `blocks` to decide spacing. Any block rendering to more than one line —
+a fenced code block, a multi-line quote — desynchronised the two, so blank lines
+appeared inside code fences and, worse, `zip` truncated at the shorter sequence
+and **silently dropped every block after the first multi-line one**. Data loss,
+in the feature whose entire job is preventing data loss.
+
+Each block now renders to exactly one chunk, which may itself be multi-line, and
+the spacing pass walks chunks. There is a regression test named after the
+failure. Code fences are also sized longer than any backtick run inside them, so
+a note containing a fence still round-trips.
