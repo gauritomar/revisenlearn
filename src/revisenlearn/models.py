@@ -527,3 +527,119 @@ class Setting(SQLModel, table=True):
     key: str = Field(primary_key=True)
     value_json: str = Field(sa_column=Column(Text, nullable=False))
     updated_at: datetime = Field(default_factory=utcnow)
+
+# --------------------------------------------------------------------------
+# Lessons, Items and Todos (addendum §1, §3)
+#
+# A parallel tracking layer. Checking a box here never creates a concept and
+# never touches FSRS (addendum §0.1) — concept extraction happens only when the
+# user deliberately writes a note.
+# --------------------------------------------------------------------------
+
+LESSON_STATUSES = ("not_started", "in_progress", "done")
+
+
+class Lesson(SQLModel, table=True):
+    """A coherent chunk of study — the level progress is tracked at.
+
+    Requires a Topic but not a Subtopic, mirroring how Notes already work.
+    """
+
+    __tablename__ = "lessons"
+    __table_args__ = (Index("ix_lessons_topic_position", "topic_id", "position"),)
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    topic_id: int = Field(foreign_key="topics.id", index=True)
+    subtopic_id: Optional[int] = Field(default=None, foreign_key="subtopics.id",
+                                       index=True)
+    name: str
+    position: int = 0
+    #: Directly settable by the user, not purely derived (addendum §4).
+    status: str = "not_started"
+    created_at: datetime = Field(default_factory=utcnow)
+    updated_at: datetime = Field(default_factory=utcnow)
+    deleted_at: Optional[datetime] = None
+
+
+class LessonItem(SQLModel, table=True):
+    """An optional checkbox sub-step. Deliberately simple: a checkbox and
+    nothing else."""
+
+    __tablename__ = "lesson_items"
+    __table_args__ = (Index("ix_lesson_items_lesson_position", "lesson_id", "position"),)
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    lesson_id: int = Field(foreign_key="lessons.id")
+    title: str
+    position: int = 0
+    done: bool = False
+    completed_at: Optional[datetime] = None
+    created_at: datetime = Field(default_factory=utcnow)
+    updated_at: datetime = Field(default_factory=utcnow)
+    deleted_at: Optional[datetime] = None
+
+
+class Todo(SQLModel, table=True):
+    """Standalone, not tied to a Lesson, Resource or Note (addendum §3).
+
+    "Just a checkbox, a title, and an optional due date. No priority field, no
+    status enum beyond done/not done."
+    """
+
+    __tablename__ = "todos"
+    __table_args__ = (Index("ix_todos_due_date", "due_date"),)
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    title: str
+    subject_id: Optional[int] = Field(default=None, foreign_key="subjects.id")
+    topic_id: Optional[int] = Field(default=None, foreign_key="topics.id")
+    due_date: Optional[date] = None
+    done: bool = False
+    completed_at: Optional[datetime] = None
+    position: int = 0
+    created_at: datetime = Field(default_factory=utcnow)
+    updated_at: datetime = Field(default_factory=utcnow)
+    deleted_at: Optional[datetime] = None
+
+
+# --------------------------------------------------------------------------
+# Flexible linking (addendum §2)
+#
+# `notes.resource_id` stays as "the resource I was primarily working from",
+# a convenience default. These cover everything beyond that one.
+# --------------------------------------------------------------------------
+
+class NoteLessonLink(SQLModel, table=True):
+    __tablename__ = "note_lesson_links"
+    __table_args__ = (
+        UniqueConstraint("note_id", "lesson_id", name="uq_note_lesson"),
+    )
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    note_id: int = Field(foreign_key="notes.id", index=True)
+    lesson_id: int = Field(foreign_key="lessons.id", index=True)
+    created_at: datetime = Field(default_factory=utcnow)
+
+
+class NoteResourceLink(SQLModel, table=True):
+    __tablename__ = "note_resource_links"
+    __table_args__ = (
+        UniqueConstraint("note_id", "resource_id", name="uq_note_resource"),
+    )
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    note_id: int = Field(foreign_key="notes.id", index=True)
+    resource_id: int = Field(foreign_key="resources.id", index=True)
+    created_at: datetime = Field(default_factory=utcnow)
+
+
+class LessonResourceLink(SQLModel, table=True):
+    __tablename__ = "lesson_resource_links"
+    __table_args__ = (
+        UniqueConstraint("lesson_id", "resource_id", name="uq_lesson_resource"),
+    )
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    lesson_id: int = Field(foreign_key="lessons.id", index=True)
+    resource_id: int = Field(foreign_key="resources.id", index=True)
+    created_at: datetime = Field(default_factory=utcnow)

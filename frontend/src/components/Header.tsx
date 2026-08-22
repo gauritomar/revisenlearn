@@ -10,6 +10,8 @@ import type { AppMeta } from '../lib/api'
 const NAV: Array<{ label: string; phase: number }> = [
   { label: 'Dashboard', phase: 1 },
   { label: 'Notes', phase: 2 },
+  { label: 'Roadmap', phase: 2 },
+  { label: 'Todos', phase: 2 },
   { label: 'Runs', phase: 5 },
   { label: 'Practice', phase: 6 },
   { label: 'Revision', phase: 7 },

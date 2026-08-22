@@ -18,6 +18,7 @@ import { Settings } from './components/Settings'
 import { Jobs } from './components/Jobs'
 import { Practice } from './components/Practice'
 import { Revision } from './components/Revision'
+import { Roadmap, Todos } from './components/Roadmap'
 
 /** Spec §14.1 [LOCKED] — both sidebars auto-collapse below 900px. */
 const COLLAPSE_BELOW = 900
@@ -127,6 +128,8 @@ function MainContent({ view, onView, activeNoteId, activeResourceId, activeDate,
   if (view === 'Runs') return <Jobs />
   if (view === 'Practice') return <Practice />
   if (view === 'Revision') return <Revision />
+  if (view === 'Roadmap') return <Roadmap />
+  if (view === 'Todos') return <Todos />
   if (view === 'Resources') return <ResourceList />
   if (view === 'Notes') return <NotesEmpty />
   return <Dashboard onView={onView} />

@@ -220,6 +220,44 @@ export type RevisionDashboard = {
   default_size: number
 }
 
+export type RoadmapItem = { id: number; title: string; done: boolean; position: number }
+export type RoadmapLesson = {
+  id: number
+  name: string
+  status: string
+  position: number
+  topic_id: number
+  subtopic_id: number | null
+  pct: number | null
+  items: RoadmapItem[]
+}
+export type RoadmapSubtopic = { id: number; name: string; pct: number | null; lessons: RoadmapLesson[] }
+export type RoadmapTopic = {
+  id: number
+  name: string
+  pct: number | null
+  subtopics: RoadmapSubtopic[]
+  lessons: RoadmapLesson[]
+}
+export type RoadmapSubject = {
+  id: number
+  name: string
+  colour: string | null
+  pct: number | null
+  topics: RoadmapTopic[]
+}
+export type TodoEntry = {
+  kind: 'todo' | 'lesson' | 'lesson_item'
+  id: number
+  title: string
+  done: boolean
+  due_date: string | null
+  subject_id: number | null
+  topic_id: number | null
+  lesson_id: number | null
+  context: string | null
+}
+
 export type SearchHit = {
   kind: 'note_block' | 'concept'
   note_id: number | null
@@ -410,6 +448,49 @@ export const api = {
   finishRevision: (id: number) =>
     request<RevisionSummary>(`/api/revision/session/${id}/finish`, {
       method: 'POST',
+    }),
+
+  roadmap: () => request<{ subjects: RoadmapSubject[] }>('/api/roadmap'),
+  createLesson: (body: Record<string, unknown>) =>
+    request<RoadmapLesson>('/api/lessons', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+  updateLesson: (id: number, body: Record<string, unknown>) =>
+    request<RoadmapLesson>(`/api/lessons/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(body),
+    }),
+  deleteLesson: (id: number) =>
+    request<void>(`/api/lessons/${id}`, { method: 'DELETE' }),
+  createLessonItem: (lessonId: number, title: string) =>
+    request<RoadmapItem>(`/api/lessons/${lessonId}/items`, {
+      method: 'POST',
+      body: JSON.stringify({ title }),
+    }),
+  updateLessonItem: (lessonId: number, itemId: number, body: Record<string, unknown>) =>
+    request<RoadmapItem>(`/api/lessons/${lessonId}/items/${itemId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(body),
+    }),
+
+  todoBoard: (params: Record<string, string | number | boolean> = {}) => {
+    const qs = new URLSearchParams(
+      Object.entries(params).map(([k, v]) => [k, String(v)]),
+    ).toString()
+    return request<{ entries: TodoEntry[]; hide_completed: boolean }>(
+      `/api/todos/board${qs ? `?${qs}` : ''}`,
+    )
+  },
+  createTodo: (body: Record<string, unknown>) =>
+    request<Record<string, unknown>>('/api/todos', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+  updateTodo: (id: number, body: Record<string, unknown>) =>
+    request<Record<string, unknown>>(`/api/todos/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(body),
     }),
 
   search: (q: string) =>

@@ -4,6 +4,7 @@ import { api, type Note, type Resource } from '../lib/api'
 import { useUI } from '../store/ui'
 import { ResourceRow } from './ResourceList'
 import { Calendar } from './Calendar'
+import type { TodoEntry } from '../lib/api'
 
 /** Spec §14 Dashboard, v1.
  *
@@ -33,6 +34,11 @@ export function Dashboard({ onView }: { onView: (v: string) => void }) {
   const { data: todaysNotes = [] } = useQuery({
     queryKey: ['notes-by-date', today],
     queryFn: () => api.notesByDate(today),
+  })
+  // Addendum §6 — a short Todos panel, nearest due date first.
+  const { data: todoBoard } = useQuery({
+    queryKey: ['todo-board', 'dashboard'],
+    queryFn: () => api.todoBoard({ hide_completed: true }),
   })
 
   const setResourceAdd = useUI((s) => s.setResourceAdd)
@@ -134,6 +140,34 @@ export function Dashboard({ onView }: { onView: (v: string) => void }) {
             {todaysNotes.map((note) => (
               <li key={note.id}>
                 <NoteLine note={note} />
+              </li>
+            ))}
+          </ul>
+        )}
+      </Section>
+
+      <Section
+        title="Todos"
+        testid="dash-todos"
+        action={{ label: 'All todos', onClick: () => onView('Todos') }}
+      >
+        {(todoBoard?.entries.length ?? 0) === 0 ? (
+          <Empty>Nothing open.</Empty>
+        ) : (
+          <ul className="space-y-1">
+            {todoBoard!.entries.slice(0, 7).map((entry: TodoEntry) => (
+              <li
+                key={`${entry.kind}-${entry.id}`}
+                className="flex items-baseline gap-2 rounded-md px-2 py-1.5 text-[0.8125rem] odd:bg-paper"
+              >
+                <span className="min-w-0 flex-1 truncate text-ink">
+                  {entry.title}
+                </span>
+                {entry.due_date && (
+                  <span className="shrink-0 text-[0.6875rem] tabular-nums text-muted">
+                    {entry.due_date}
+                  </span>
+                )}
               </li>
             ))}
           </ul>

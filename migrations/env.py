@@ -26,6 +26,19 @@ alembic_config.set_main_option("sqlalchemy.url", app_config.database_url())
 target_metadata = SQLModel.metadata
 
 
+#: FTS5 virtual tables and the shadow tables SQLite creates alongside them
+#: (`*_content`, `*_data`, `*_idx`, `*_docsize`, `*_config`) are managed by
+#: hand in their own migration, not by SQLModel's metadata. Without this filter
+#: autogenerate sees them as orphans and emits DROP TABLE for every one.
+_FTS_PREFIXES = ("note_blocks_fts", "concepts_fts")
+
+
+def include_object(obj, name, type_, reflected, compare_to):
+    if type_ == "table" and any(name.startswith(p) for p in _FTS_PREFIXES):
+        return False
+    return True
+
+
 def _apply_pragmas(dbapi_connection, _connection_record) -> None:
     cur = dbapi_connection.cursor()
     cur.execute("PRAGMA journal_mode=WAL")
@@ -41,6 +54,7 @@ def run_migrations_offline() -> None:
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
         render_as_batch=True,
+        include_object=include_object,
     )
     with context.begin_transaction():
         context.run_migrations()
@@ -68,6 +82,7 @@ def run_migrations_online() -> None:
             connection=connection,
             target_metadata=target_metadata,
             render_as_batch=True,
+            include_object=include_object,
         )
         with context.begin_transaction():
             context.run_migrations()

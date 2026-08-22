@@ -247,6 +247,11 @@ def stage_extracting(session: Session, job: PipelineJob,
 
 
 def _hierarchy_path(session: Session, note_id: int) -> str:
+    """The Subject/Topic/Subtopic path, plus any Lessons the note is linked to.
+
+    Addendum §8: lesson names are "additive context only — extraction still
+    works exactly as specced when no Lesson link exists".
+    """
     note = session.get(Note, note_id)
     if note is None:
         return ""
@@ -263,7 +268,23 @@ def _hierarchy_path(session: Session, note_id: int) -> str:
         subtopic = session.get(Subtopic, note.subtopic_id)
         if subtopic:
             parts.append(subtopic.name)
-    return " > ".join(parts)
+
+    path = " > ".join(parts)
+
+    from ..models import Lesson, NoteLessonLink
+
+    links = session.exec(
+        select(NoteLessonLink).where(NoteLessonLink.note_id == note_id)
+    ).all()
+    names = []
+    for link in links:
+        lesson = session.get(Lesson, link.lesson_id)
+        if lesson is not None and lesson.deleted_at is None:
+            names.append(lesson.name)
+    if names:
+        path = f"{path} | Lessons: {', '.join(sorted(names))}" if path \
+            else f"Lessons: {', '.join(sorted(names))}"
+    return path
 
 
 def stage_resolving_identity(session: Session, job: PipelineJob,
