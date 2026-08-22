@@ -37,6 +37,8 @@ class MockProvider:
             return self.responses.pop(0)
         if self.builder is not None:
             return self.builder(user_input, schema)
+        if schema.__name__ == "MCQBatch":
+            return default_mcqs(user_input)
         return default_extraction(user_input)
 
     def generate_text(self, *, system_instruction: str, user_input: str,
@@ -134,3 +136,42 @@ def default_extraction(user_input: str) -> dict:
             "confidence": 0.7,
         })
     return {"concepts": concepts, "edges": edges}
+
+
+_CONCEPT = re.compile(r"CONCEPT:\s*(.+)")
+_COUNT = re.compile(r"COUNT:\s*(\d+)")
+
+
+def default_mcqs(user_input: str) -> dict:
+    """Ten coherent MCQs for the requested concept (spec §9.1, §11.2).
+
+    Stems are numbered so they are distinct, which matters: the generator
+    de-duplicates by stem, and identical stems would silently collapse a pool
+    of ten into a pool of one.
+    """
+    concept_match = _CONCEPT.search(user_input)
+    concept = concept_match.group(1).strip() if concept_match else "the concept"
+    count_match = _COUNT.search(user_input)
+    count = int(count_match.group(1)) if count_match else 10
+
+    questions = []
+    for index in range(count):
+        questions.append({
+            "stem": f"Q{index + 1}: which statement about {concept} holds?",
+            "options": [
+                {"id": "a", "text": f"The correct account of {concept}"},
+                {"id": "b", "text": "A plausible but subtly wrong condition"},
+                {"id": "c", "text": "An adjacent concept mistaken for this one"},
+                {"id": "d", "text": "A common confusion about the boundary case"},
+            ],
+            "correct_option_id": "a",
+            "explanation": f"Option a states {concept} accurately.",
+            "distractor_rationales": {
+                "b": "The condition is reversed.",
+                "c": "That describes a neighbouring idea.",
+                "d": "True only outside the stated boundary.",
+            },
+            "dimension": "recall" if index % 3 else "explain",
+            "difficulty": 3,
+        })
+    return {"questions": questions}

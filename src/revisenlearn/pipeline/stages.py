@@ -410,16 +410,8 @@ def creates_cycle(session: Session, source_id: int, target_id: int) -> bool:
     return False
 
 
-def stage_planning_coverage(session: Session, job: PipelineJob,
-                            ctx: JobContext) -> None:
-    """Phase 6 fills this in (spec §10.2)."""
-    return None
-
-
-def stage_generating_mcqs(session: Session, job: PipelineJob,
-                          ctx: JobContext) -> None:
-    """Phase 6 fills this in (spec §9.1)."""
-    return None
+from .coverage import stage_planning_coverage  # noqa: E402  (§10.2)
+from .mcqs import stage_generating_mcqs  # noqa: E402  (§9.1)
 
 
 def stage_finalising(session: Session, job: PipelineJob,

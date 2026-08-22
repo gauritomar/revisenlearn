@@ -122,6 +122,42 @@ export type JobDetail = {
   runs: LLMRunRow[]
 }
 
+export type PracticeOption = { id: string; text: string }
+export type PracticeQuestion = {
+  item_id: number
+  position: number
+  mcq_id: number
+  concept_id: number
+  concept_name: string
+  dimension: string
+  stem: string
+  options: PracticeOption[]
+  selection_bucket: string | null
+}
+export type PracticeFeedback = {
+  is_correct: boolean
+  correct_option_id: string
+  explanation: string | null
+  distractor_rationales: Record<string, string>
+  retired: boolean
+  consecutive_correct: number
+}
+export type PracticeSummary = {
+  session_id: number
+  planned_count: number
+  completed_count: number
+  correct_count: number
+  duration_ms: number | null
+  finished: boolean
+  per_concept: Array<{
+    concept_id: number
+    concept_name: string
+    asked: number
+    correct: number
+  }>
+  missed_mcq_ids: number[]
+}
+
 export type SearchHit = {
   kind: 'note_block' | 'concept'
   note_id: number | null
@@ -239,6 +275,34 @@ export const api = {
   job: (id: number) => request<JobDetail>(`/api/pipeline/jobs/${id}`),
   retryJob: (id: number) =>
     request<PipelineJob>(`/api/pipeline/jobs/${id}/retry`, { method: 'POST' }),
+
+  practiceAvailable: () =>
+    request<{ active_mcqs: number; concepts: number; never_served: number }>(
+      '/api/practice/available',
+    ),
+  startPractice: (count: number, scope?: Record<string, unknown>) =>
+    request<{ id: number; planned_count: number }>('/api/practice/session', {
+      method: 'POST',
+      body: JSON.stringify({ count, scope: scope ?? null }),
+    }),
+  nextQuestion: (id: number) =>
+    request<{ done: boolean; question?: PracticeQuestion; summary?: PracticeSummary }>(
+      `/api/practice/session/${id}/next`,
+    ),
+  answerPractice: (
+    id: number,
+    body: { item_id: number; selected_option_id: string; response_ms?: number },
+  ) =>
+    request<PracticeFeedback>(`/api/practice/session/${id}/answer`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+  finishPractice: (id: number) =>
+    request<PracticeSummary>(`/api/practice/session/${id}/finish`, {
+      method: 'POST',
+    }),
+  practiceSummary: (id: number) =>
+    request<PracticeSummary>(`/api/practice/session/${id}/summary`),
 
   search: (q: string) =>
     request<{ query: string; hits: SearchHit[] }>(`/api/search?q=${encodeURIComponent(q)}`),

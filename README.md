@@ -4,7 +4,7 @@ A local-first study app. You write notes; the app turns them into durable
 concepts, then schedules them for review. Single user, single machine, no cloud,
 no auth, no Docker.
 
-**Status: Phases 1–3 complete.** See [Build status](#build-status).
+**Status: Phases 1–6 complete.** See [Build status](#build-status).
 
 ---
 
@@ -107,8 +107,16 @@ resource, its status and progress slider on the left, today's note for it on
 the right. The dashboard's **Study next** ranks what to pick up, and the
 calendar shows what you wrote on any day.
 
-From Phase 5, the **Process notes** button turns what you wrote into concepts,
-and Phases 6–7 add the two review loops.
+When you have written enough, press **Process notes**. It asks before it
+spends anything, then extracts concepts from your notes, deduplicates them
+against what you already know, and generates a pool of multiple-choice
+questions per concept. **Runs** shows what each job created and exactly what it
+cost.
+
+**Practice** is then a 20/30/50-question multiple-choice session with a
+stopwatch: `1`–`4` to answer, `Space` for the next. Practice feeds your
+statistics only — it never moves a review date, because recognition is not
+recall. Prose revision, which does drive scheduling, arrives in Phase 7.
 
 ### Backup and export
 
@@ -144,7 +152,7 @@ question) arrive with the review loops in Phases 6 and 7.
 uv sync                      # Python deps
 cd frontend && npm install   # frontend deps
 
-uv run pytest                # all 164 tests
+uv run pytest                # all 271 tests
 uv run pytest -m "not ui"    # API + database only, no browser needed
 uv run pytest -m ui          # browser tests (needs: uv run playwright install chromium)
 
@@ -155,10 +163,17 @@ uv run alembic revision --autogenerate -m "what changed"
 Optional dependency groups, installed at the phase that needs them:
 
 ```bash
-uv sync --extra embeddings   # fastembed, Phase 4 (~130MB model on first use)
-uv sync --extra llm          # google-genai, Phase 5
+uv sync --extra llm          # google-genai, needed for real Gemini calls
 uv sync --extra fsrs         # fsrs, Phase 7
 ```
+
+`fastembed` is a default dependency from Phase 4 on: concept identity and
+semantic search must work offline. The first run downloads a ~130MB ONNX
+model.
+
+**No test ever calls a real model.** The suite runs with
+`RNL_LLM_PROVIDER=mock`; only pressing **Process notes** in the app spends
+anything.
 
 ### Layout
 
@@ -186,9 +201,9 @@ begins.
 | 1 | Foundation | **done** |
 | 2 | Notes and resources | **done** |
 | 3 | Backup and export | **done** |
-| 4 | Embeddings and identity | not started |
-| 5 | LLM abstraction and pipeline | not started |
-| 6 | Coverage, review items, MCQs | not started |
+| 4 | Embeddings and identity | **done** |
+| 5 | LLM abstraction and pipeline | **done** |
+| 6 | Coverage, review items, MCQs | **done** |
 | 7 | FSRS and revision | not started |
 | 8 | Graph console | not started |
 | 9 | Mastery, usage, polish | not started |

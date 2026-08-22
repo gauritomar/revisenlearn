@@ -16,6 +16,7 @@ import { ResourceSplitView } from './components/ResourceSplitView'
 import { DayView } from './components/Calendar'
 import { Settings } from './components/Settings'
 import { Jobs } from './components/Jobs'
+import { Practice } from './components/Practice'
 
 /** Spec §14.1 [LOCKED] — both sidebars auto-collapse below 900px. */
 const COLLAPSE_BELOW = 900
@@ -123,6 +124,7 @@ function MainContent({ view, onView, activeNoteId, activeResourceId, activeDate,
   if (activeDate !== null) return <DayView date={activeDate} />
   if (view === 'Settings') return <Settings meta={meta} />
   if (view === 'Runs') return <Jobs />
+  if (view === 'Practice') return <Practice />
   if (view === 'Resources') return <ResourceList />
   if (view === 'Notes') return <NotesEmpty />
   return <Dashboard onView={onView} />

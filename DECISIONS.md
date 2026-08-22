@@ -407,3 +407,85 @@ Each block now renders to exactly one chunk, which may itself be multi-line, and
 the spacing pass walks chunks. There is a regression test named after the
 failure. Code fences are also sized longer than any backtick run inside them, so
 a note containing a fence still round-trips.
+
+---
+
+## 8. Phases 4–6
+
+### fastembed became a default dependency
+
+§16 requires concept identity and semantic search to work with no network, so
+the embedding model cannot be optional. Vectors are stored little-endian
+float32; cosine is a dot product over L2-normalised rows; matching is
+brute-force numpy over the subject, which §7.2 explicitly requires instead of a
+vector index.
+
+Identity is tested against the **real** model rather than a stub. §7.2's 0.92
+and 0.82 are claims about `bge-small-en-v1.5` specifically, and a fake embedder
+would prove nothing about them. Measured: near-identical definitions 0.99, an
+acronym against its expansion 0.85, unrelated concepts 0.68 — so the specced
+thresholds behave as intended on real data.
+
+### Merge reversal is partial, deliberately
+
+§7.3 makes merges reversible and §6 makes `review_logs` append-only. Those pull
+against each other: once A's logs have been repointed to B's review item and B
+has been reviewed since, un-repointing them would mean rewriting history that
+must never be rewritten. `revert_merge` therefore restores the archived
+concept, its aliases and its sources, but does **not** unwind review-item or
+edge repointing. Recorded here rather than silently.
+
+### The SDK surface was verified, not assumed
+
+§12.1 mandates `google-genai` v2.0.0+ and `client.interactions.create`. Both
+exist (2.19.0). The accepted body keys are `model`, `system_instruction`,
+`input`, `response_format`, `generation_config`; the response carries
+`output_text` and `usage.total_{input,output,cached}_tokens`. `thinking_level`
+goes in `generation_config`, and the provider asserts at call time that
+`temperature`, `top_p`, `top_k`, `candidate_count` and `thinking_budget` are
+never sent, per §12.3.
+
+### A retry always replays from the first stage
+
+§8.2 says a failed job "resumes from the last completed stage". Extraction
+output lives only in the job context — §6 has no table for it — so literally
+resuming at, say, `generating_mcqs` would find an empty context and quietly
+report success having done nothing. Retry therefore replays from
+`snapshotting`, which is idempotent, through `chunking`, which is pure, and
+re-runs extraction.
+
+That costs tokens again. It is the honest price of not persisting model output,
+and §7.2 identity resolution means the replay deduplicates rather than
+duplicating. The failing stage is still recorded on the job so the §8.5 detail
+page can say where it broke, and the retry button says plainly that it will
+spend again.
+
+### The random bucket excludes the other buckets' leftovers **[JUDGEMENT]**
+
+§9.1's third bucket is "anything else active, weighted toward
+least-recently-served". Read naively — sorting by `last_served_at` with
+never-served first — the random bucket refills itself with *new* questions and
+collapses 40/40/20 into "mostly new". "Anything else" is therefore read as
+anything the other two buckets have not claimed: not never-served, not
+currently-failed. Only once that pool is exhausted do leftovers fill the gap,
+because §9.1 also requires sessions to "always fill to the requested count".
+
+### MCQ generation is not yet on the Batch API
+
+§12.2 assigns `mcq_generation` to the Batch API for the 50% discount. The
+current implementation issues standard interactive calls through the same
+provider interface and records `request_mode='standard'`, so cost is priced at
+standard rates.
+
+This is a real gap against the spec, recorded rather than papered over. The
+alternative — recording `request_mode='batch'` while making standard calls —
+would have made the Usage screen under-report real spend by half, which is
+worse than being late. Batch submission is asynchronous (submit, poll,
+retrieve) and cannot be verified without spending money against the live API,
+so it is left for a follow-up.
+
+### Practice never touches FSRS
+
+§9.1 is explicit and there is a test that reads every scheduling field before
+and after a full session and asserts nothing moved, plus that `review_logs`
+stayed empty. Recognition is not recall.

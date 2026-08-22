@@ -378,15 +378,31 @@ def test_every_call_is_logged_with_version_model_and_tokens(session) -> None:
     with session_scope() as s:
         runs = s.exec(select(LLMRun)).all()
         assert runs
+
+        # Every run, whatever the task, carries what §1.6 requires.
         for run in runs:
-            assert run.task == "concept_extraction"
-            assert run.prompt_version == "concept_extraction_v1"
-            assert run.model == "gemini-3.7-flash"
-            assert run.thinking_level == "medium"
+            assert run.prompt_version
+            assert run.model
             assert run.input_tokens > 0
             assert run.output_tokens > 0
             assert run.job_id == job.id
             assert run.success is True
+
+        # Extraction is configured per §12.2.
+        extraction = [r for r in runs if r.task == "concept_extraction"]
+        assert extraction
+        for run in extraction:
+            assert run.prompt_version == "concept_extraction_v1"
+            assert run.model == "gemini-3.7-flash"
+            assert run.thinking_level == "medium"
+
+        # A full run now also generates MCQs (Phase 6), on the cheaper model.
+        mcq_runs = [r for r in runs if r.task == "mcq_generation"]
+        assert mcq_runs
+        for run in mcq_runs:
+            assert run.model == "gemini-3.5-flash-lite"
+            assert run.prompt_version == "mcq_generation_v1"
+            assert run.concept_id is not None
 
 
 def test_cost_is_priced_from_the_settings_table(session) -> None:
