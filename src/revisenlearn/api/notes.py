@@ -55,11 +55,15 @@ def _maybe_add_date_divider(session: Session, note: Note) -> None:
         return
     if any(b.block_type == "date_divider" and b.text == today for b in blocks):
         return
-    # Only when the note last saw work on an earlier day.
+    # Only when the note last saw work on an earlier day — measured in the
+    # user's own day, not UTC's. `updated_at` is UTC and `today` is local, so
+    # comparing them directly puts a divider on every note touched between
+    # midnight and the UTC offset: for anyone east of Greenwich, most late
+    # evenings and every early morning.
     updated = note.updated_at
     if updated is not None:
         seen = (updated if updated.tzinfo else updated.replace(tzinfo=timezone.utc))
-        if seen.date().isoformat() == today:
+        if seen.astimezone().date().isoformat() == today:
             return
 
     session.add(NoteBlock(
@@ -90,6 +94,7 @@ def _block_out(block: NoteBlock) -> BlockOut:
         text=block.text,
         checked=block.checked,
         url=block.url,
+        language=block.language,
         parent_block_id=block.parent_block_id,
         content_hash=block.content_hash,
         processed_hash=block.processed_hash,
@@ -267,27 +272,48 @@ def ensure_note(payload: NoteCreate,
         return create_note(payload.model_copy(update={"study_date": study_date}),
                            session)
 
-    stmt = select(Note).where(
-        Note.deleted_at.is_(None),
-        Note.study_date == study_date,
-    )
+    # A resource note stays per-resource-per-day (§5.1: "the note for that
+    # resource and today"), because the split view is a reading session.
     if payload.resource_id is not None:
-        # §5.1 — the note for that resource and today, created on the spot.
-        stmt = stmt.where(Note.resource_id == payload.resource_id)
-    elif payload.subtopic_id is not None:
-        stmt = stmt.where(Note.subtopic_id == payload.subtopic_id,
-                          Note.resource_id.is_(None))
+        existing = session.exec(
+            select(Note)
+            .where(Note.deleted_at.is_(None),
+                   Note.study_date == study_date,
+                   Note.resource_id == payload.resource_id)
+            .order_by(Note.id)
+        ).first()
+        if existing is not None:
+            return _note_out(session, existing)
+        return create_note(payload.model_copy(update={"study_date": study_date}),
+                           session)
+
+    # Every level of the hierarchy is a page, and a page has one continuous
+    # note — the same rule §3 gives lessons, extended to the levels above them
+    # because the user asked for "a Notion type interface where everything is
+    # a page". Spec §4.1's "one note per (Subtopic, day)" was the older model;
+    # a date divider keeps a long-running note navigable instead (§3).
+    stmt = select(Note).where(Note.deleted_at.is_(None),
+                              Note.resource_id.is_(None),
+                              Note.lesson_id.is_(None))
+    if payload.subtopic_id is not None:
+        stmt = stmt.where(Note.subtopic_id == payload.subtopic_id)
     elif payload.topic_id is not None:
         stmt = stmt.where(Note.topic_id == payload.topic_id,
-                          Note.subtopic_id.is_(None),
-                          Note.resource_id.is_(None))
+                          Note.subtopic_id.is_(None))
+    elif payload.subject_id is not None:
+        stmt = stmt.where(Note.subject_id == payload.subject_id,
+                          Note.topic_id.is_(None),
+                          Note.subtopic_id.is_(None))
     else:
         raise HTTPException(
-            400, "lesson_id, resource_id, subtopic_id or topic_id is required"
+            400,
+            "lesson_id, resource_id, subtopic_id, topic_id or subject_id "
+            "is required",
         )
 
     existing = session.exec(stmt.order_by(Note.id)).first()
     if existing is not None:
+        _maybe_add_date_divider(session, existing)
         return _note_out(session, existing)
     return create_note(payload.model_copy(update={"study_date": study_date}), session)
 
@@ -450,6 +476,7 @@ def save_blocks(note_id: int, payload: BlocksSave,
                 text=text,
                 checked=checked,
                 url=url,
+                language=incoming.language,
                 parent_block_id=parent_id,
                 content_hash=new_hash,
             )
@@ -461,6 +488,7 @@ def save_blocks(note_id: int, payload: BlocksSave,
             block.text = text
             block.checked = checked
             block.url = url
+            block.language = incoming.language
             block.parent_block_id = parent_id
             block.content_hash = new_hash
             block.updated_at = _now()

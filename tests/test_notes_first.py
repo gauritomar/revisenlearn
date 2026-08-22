@@ -516,3 +516,138 @@ def test_dividers_and_empty_boxes_are_not_sent_to_the_model(client) -> None:
     preview = client.get("/api/pipeline/pending", params={"preview": True}).json()
     assert preview["unprocessed_blocks"] == 1
     assert preview["blocks"][0]["snippet"] == "Semantic chunking splits on meaning"
+
+
+# --------------------------------------------------------------------------
+# Pages: every level of the hierarchy opens the same way
+# --------------------------------------------------------------------------
+
+def test_every_level_is_a_page_with_a_note(client) -> None:
+    """"A Notion type interface where everything is a page and pages under
+    pages." A Subject, a Topic and a Subtopic each open to their own note,
+    created on first visit like a lesson's."""
+    tree = _tree(client)
+
+    for kind, page_id, expected in (
+        ("subject", tree["subject"]["id"], "GenAI"),
+        ("topic", tree["topic"]["id"], "Retrieval"),
+        ("subtopic", tree["subtopic"]["id"], "Chunking"),
+        ("lesson", tree["lesson"]["id"], "Fixed vs semantic chunking"),
+    ):
+        page = client.get(f"/api/pages/{kind}/{page_id}").json()
+        assert page["name"] == expected
+        assert page["note_id"] is not None
+
+    # Four pages, four distinct notes.
+    ids = {client.get(f"/api/pages/{k}/{i}").json()["note_id"]
+           for k, i in (("subject", tree["subject"]["id"]),
+                        ("topic", tree["topic"]["id"]),
+                        ("subtopic", tree["subtopic"]["id"]),
+                        ("lesson", tree["lesson"]["id"]))}
+    assert len(ids) == 4
+
+
+def test_a_page_lists_the_pages_inside_it(client) -> None:
+    """"When I open a page I should be able to see all the pages under it
+    too."""
+    tree = _tree(client)
+    note = client.post("/api/notes/ensure",
+                       json={"lesson_id": tree["lesson"]["id"]}).json()
+    _write(client, note["id"], ["Fixed-size chunking splits on a token budget"])
+
+    subject = client.get(f"/api/pages/subject/{tree['subject']['id']}").json()
+    assert [(c["kind"], c["name"]) for c in subject["children"]] == [
+        ("topic", "Retrieval")]
+
+    topic = client.get(f"/api/pages/topic/{tree['topic']['id']}").json()
+    assert [(c["kind"], c["name"], c["child_count"]) for c in topic["children"]] == [
+        ("subtopic", "Chunking", 1)]
+
+    subtopic = client.get(f"/api/pages/subtopic/{tree['subtopic']['id']}").json()
+    lesson = subtopic["children"][0]
+    assert (lesson["kind"], lesson["name"], lesson["block_count"]) == \
+        ("lesson", "Fixed vs semantic chunking", 1)
+
+    # A lesson is the innermost page: three fixed levels plus lessons (§3).
+    assert client.get(f"/api/pages/lesson/{tree['lesson']['id']}").json()["children"] == []
+
+
+def test_a_page_knows_the_trail_above_it(client) -> None:
+    tree = _tree(client)
+    page = client.get(f"/api/pages/lesson/{tree['lesson']['id']}").json()
+    assert [(c["kind"], c["name"]) for c in page["breadcrumb"]] == [
+        ("subject", "GenAI"), ("topic", "Retrieval"), ("subtopic", "Chunking")]
+
+
+def test_a_page_note_is_continuous_not_daily(client) -> None:
+    """Spec §4.1 said one note per (Subtopic, day). A page whose note changes
+    identity at midnight is not a page, so every level follows §3's rule for
+    lessons instead."""
+    tree = _tree(client)
+    first = client.post("/api/notes/ensure",
+                        json={"subtopic_id": tree["subtopic"]["id"]}).json()
+    _write(client, first["id"], ["Written today"])
+
+    later = client.post(
+        "/api/notes/ensure",
+        json={"subtopic_id": tree["subtopic"]["id"],
+              "study_date": (dt.date.today() + dt.timedelta(days=30)).isoformat()},
+    ).json()
+    assert later["id"] == first["id"]
+
+
+def test_a_resource_note_is_still_one_per_day(client) -> None:
+    """The exception: §5.1's split view is a reading session, not a page."""
+    resource = client.post("/api/resources",
+                           json={"title": "A lecture"}).json()
+    today = client.post("/api/notes/ensure",
+                        json={"resource_id": resource["id"]}).json()
+    other_day = client.post(
+        "/api/notes/ensure",
+        json={"resource_id": resource["id"],
+              "study_date": (dt.date.today() + dt.timedelta(days=1)).isoformat()},
+    ).json()
+    assert other_day["id"] != today["id"]
+
+
+def test_an_unknown_page_kind_is_refused(client) -> None:
+    tree = _tree(client)
+    assert client.get(f"/api/pages/banana/{tree['subject']['id']}").status_code == 400
+    assert client.get("/api/pages/subject/9999").status_code == 404
+
+
+def test_the_preview_says_which_page_each_block_is_on(client) -> None:
+    """The "N blocks to Gemini" list is clickable, so each block carries the
+    page it came from."""
+    tree = _tree(client)
+    note = client.post("/api/notes/ensure",
+                       json={"lesson_id": tree["lesson"]["id"]}).json()
+    _write(client, note["id"], ["Semantic chunking splits on meaning"])
+
+    block = client.get("/api/pipeline/pending",
+                       params={"preview": True}).json()["blocks"][0]
+    assert (block["page_kind"], block["page_id"]) == ("lesson", tree["lesson"]["id"])
+
+
+def test_a_code_block_keeps_its_language(client) -> None:
+    """Syntax highlighting is chosen when the block is written, not guessed
+    from the text when it is read."""
+    tree = _tree(client)
+    note = client.post("/api/notes/ensure",
+                       json={"lesson_id": tree["lesson"]["id"]}).json()
+    client.put(f"/api/notes/{note['id']}/blocks", json={"blocks": [
+        {"id": None, "position": 0, "block_type": "code_block",
+         "text": "print(ord('A'))", "language": "python"},
+    ]})
+
+    reopened = client.get(f"/api/notes/{note['id']}").json()
+    assert reopened["blocks"][0]["language"] == "python"
+
+
+def test_a_todo_can_be_deleted(client) -> None:
+    """Principle §1.7 — soft: the row goes, the record does not."""
+    todo = client.post("/api/todos", json={"title": "Redo resume"}).json()
+    assert any(t["id"] == todo["id"] for t in client.get("/api/todos").json())
+
+    assert client.delete(f"/api/todos/{todo['id']}").status_code == 204
+    assert all(t["id"] != todo["id"] for t in client.get("/api/todos").json())

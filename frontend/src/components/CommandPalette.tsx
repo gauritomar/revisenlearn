@@ -9,7 +9,7 @@ import { useUI } from '../store/ui'
 export function CommandPalette() {
   const open = useUI((s) => s.paletteOpen)
   const setPalette = useUI((s) => s.setPalette)
-  const openSubtopic = useUI((s) => s.openSubtopic)
+  const openNote = useUI((s) => s.openNote)
   const openAddWith = useUI((s) => s.openAddWith)
   const qc = useQueryClient()
 
@@ -50,7 +50,7 @@ export function CommandPalette() {
     if (hit.kind === 'note_block' && hit.note_id !== null) {
       const note = await api.note(hit.note_id)
       qc.setQueryData(['note', note.id], note)
-      openSubtopic(note.subtopic_id ?? -1, note.id)
+      openNote(note.id)
     }
     setPalette(false)
   }

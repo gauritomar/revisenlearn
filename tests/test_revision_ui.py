@@ -85,7 +85,13 @@ def test_the_due_count_is_neutral(page_with_due) -> None:
     'overdue!' styling. A neutral grey count.\""""
     due = page_with_due.get_by_test_id("revision-due")
     due.wait_for(state="visible")
-    assert "3" in due.inner_text()
+    # The panel renders a 0 before the count arrives, so wait for the fetch
+    # rather than reading whichever frame is on screen.
+    page_with_due.wait_for_function(
+        "() => document.querySelector('[data-testid=revision-due]')"
+        "?.innerText.includes('3')",
+        timeout=10_000,
+    )
 
     body = page_with_due.get_by_test_id("revision-dashboard").inner_text()
     assert "!" not in body

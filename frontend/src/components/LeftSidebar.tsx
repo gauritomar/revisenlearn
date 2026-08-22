@@ -1,21 +1,24 @@
 import { useState } from 'react'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery } from '@tanstack/react-query'
 
 import { api, type LessonBrief, type Subject, type TreeKind } from '../lib/api'
-import { useOpenLesson } from '../lib/openLesson'
+import { useRefreshEverything } from '../lib/refresh'
 import { useUI } from '../store/ui'
 
 /** Spec §14 — left sidebar: Subjects → Topics → Subtopics, collapsible, state
  *  persisted. Three fixed levels of hierarchy, no arbitrary nesting (§3
  *  **[LOCKED]**), with a Lesson's note hanging off the bottom.
  *
- *  Consolidated addendum §5 makes the interaction Notion's, exactly:
- *  "clicking a page's **chevron** expands children inline without navigating;
- *  clicking the **name** navigates to open that page." Subject, Topic and
- *  Subtopic are organisational, so only their chevrons do anything; a
- *  Lesson's name opens its note (§3). Every row hides a trash icon until it
- *  is hovered, and every row can be dragged onto another to reorder or
- *  reparent it.
+ *  Consolidated addendum §5 makes the interaction Notion's: "clicking a
+ *  page's **chevron** expands children inline without navigating; clicking
+ *  the **name** navigates to open that page."
+ *
+ *  The addendum then made Subject/Topic/Subtopic names inert, because only a
+ *  Lesson had a note. Every level is a page with a note now, so every name
+ *  navigates — which is the Notion behaviour the addendum was pointing at in
+ *  the first place. Deleting lives in the Roadmap, not here: a trash icon on
+ *  a row you are only passing through is an accident waiting to happen.
+ *  Rows still drag onto one another to reorder or reparent.
  */
 export function LeftSidebar() {
   const { data: subjects = [], isLoading } = useQuery({
@@ -121,14 +124,8 @@ function target(drag: Dragged, onto: Dragged, index: number):
 }
 
 function useMove() {
-  const qc = useQueryClient()
-  return useMutation({
-    mutationFn: api.moveTreeItem,
-    onSuccess: async () => {
-      await qc.invalidateQueries({ queryKey: ['subjects'] })
-      await qc.invalidateQueries({ queryKey: ['roadmap'] })
-    },
-  })
+  const refresh = useRefreshEverything()
+  return useMutation({ mutationFn: api.moveTreeItem, onSuccess: refresh })
 }
 
 // --------------------------------------------------------------------------
@@ -148,7 +145,7 @@ function Chevron({ open }: { open: boolean }) {
 
 function Row({
   kind, id, name, testId, nameTestId, expandable, expanded, onToggle, onOpen,
-  onDelete, self, index, active, dot, trailing, className,
+  self, index, active, dot, trailing, className,
 }: {
   kind: TreeKind
   id: number
@@ -160,9 +157,7 @@ function Row({
   expandable: boolean
   expanded: boolean
   onToggle: () => void
-  /** Only Lessons navigate; for the other three levels the name is inert. */
-  onOpen?: () => void
-  onDelete: () => Promise<unknown>
+  onOpen: () => void
   self: Dragged
   index: number
   active?: boolean
@@ -170,7 +165,6 @@ function Row({
   trailing?: React.ReactNode
   className?: string
 }) {
-  const [confirming, setConfirming] = useState(false)
   const [over, setOver] = useState(false)
   const move = useMove()
 
@@ -232,89 +226,26 @@ function Row({
         />
       )}
 
-      {onOpen ? (
-        <button
-          type="button"
-          onClick={onOpen}
-          data-testid={nameTestId ?? `${kind}-name-${id}`}
-          className="min-w-0 flex-1 truncate py-1.5 text-left text-[0.8125rem] text-ink"
-        >
-          {name}
-        </button>
-      ) : (
-        // Organisational levels: the name is not a target, so it does not
-        // pretend to be one — no pointer cursor, no hover state of its own.
-        <span
-          data-testid={nameTestId ?? `${kind}-name-${id}`}
-          onDoubleClick={onToggle}
-          className="min-w-0 flex-1 select-none truncate py-1.5 text-[0.8125rem] text-ink"
-        >
-          {name}
-        </span>
-      )}
+      <button
+        type="button"
+        onClick={onOpen}
+        data-testid={nameTestId ?? `${kind}-name-${id}`}
+        className="min-w-0 flex-1 truncate py-1.5 text-left text-[0.8125rem] text-ink"
+      >
+        {name}
+      </button>
 
       {trailing}
-
-      {/* §5 — "hovering any row … reveals a small trash icon", behind one
-          confirmation step. */}
-      {confirming ? (
-        <span className="flex shrink-0 items-center gap-1 text-[0.6875rem]">
-          <button
-            type="button"
-            onClick={async () => { await onDelete(); setConfirming(false) }}
-            data-testid={`${kind}-delete-confirm-${id}`}
-            className="rounded bg-stale px-1.5 py-0.5 font-medium text-white"
-          >
-            Delete
-          </button>
-          <button
-            type="button"
-            onClick={() => setConfirming(false)}
-            className="rounded px-1 py-0.5 text-muted transition hover:text-ink"
-          >
-            No
-          </button>
-        </span>
-      ) : (
-        <button
-          type="button"
-          onClick={() => setConfirming(true)}
-          data-testid={`${kind}-delete-${id}`}
-          aria-label={`Delete ${name}`}
-          title={`Delete ${name}`}
-          className="grid size-5 shrink-0 place-items-center rounded text-faint opacity-0 transition hover:bg-line-soft hover:text-stale focus-visible:opacity-100 group-hover:opacity-100"
-        >
-          <svg width="11" height="11" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-            <path
-              d="M2.5 3.5h7M5 3V2h2v1M4 3.5l.4 6h3.2l.4-6"
-              stroke="currentColor" strokeWidth="1.1"
-              strokeLinecap="round" strokeLinejoin="round"
-            />
-          </svg>
-        </button>
-      )}
     </div>
   )
-}
-
-function useDelete(fn: (id: number) => Promise<unknown>, kind: TreeKind) {
-  const qc = useQueryClient()
-  const clearActive = useUI((s) => s.clearActive)
-  return async (id: number) => {
-    await fn(id)
-    // Close the open note only if the delete could have taken it: a lesson
-    // that is the one on screen, or any level above, which cascades.
-    const state = useUI.getState()
-    if (kind !== 'lesson' || state.activeLessonId === id) clearActive()
-    await qc.invalidateQueries({ queryKey: ['subjects'] })
-    await qc.invalidateQueries({ queryKey: ['roadmap'] })
-  }
 }
 
 function SubjectRow({ subject, index }: { subject: Subject; index: number }) {
   const expanded = useUI((s) => s.expandedSubjects.includes(subject.id))
   const toggleSubject = useUI((s) => s.toggleSubject)
-  const remove = useDelete(api.deleteSubject, 'subject')
+  const openPage = useUI((s) => s.openPage)
+  const active = useUI((s) => s.activePage?.kind === 'subject'
+                              && s.activePage.id === subject.id)
 
   return (
     <li>
@@ -326,7 +257,8 @@ function SubjectRow({ subject, index }: { subject: Subject; index: number }) {
         expandable
         expanded={expanded}
         onToggle={() => toggleSubject(subject.id)}
-        onDelete={() => remove(subject.id)}
+        onOpen={() => openPage('subject', subject.id)}
+        active={active}
         self={{ kind: 'subject', id: subject.id, parentId: null, subtopicId: null }}
         index={index}
         dot={subject.colour}
@@ -351,7 +283,9 @@ function SubjectRow({ subject, index }: { subject: Subject; index: number }) {
 function TopicRow({ topic, index }: { topic: Subject['topics'][number]; index: number }) {
   const expanded = useUI((s) => s.expandedTopics.includes(topic.id))
   const toggleTopic = useUI((s) => s.toggleTopic)
-  const remove = useDelete(api.deleteTopic, 'topic')
+  const openPage = useUI((s) => s.openPage)
+  const active = useUI((s) => s.activePage?.kind === 'topic'
+                              && s.activePage.id === topic.id)
   const hasChildren = topic.subtopics.length > 0 || topic.lessons.length > 0
 
   return (
@@ -364,7 +298,8 @@ function TopicRow({ topic, index }: { topic: Subject['topics'][number]; index: n
         expandable={hasChildren}
         expanded={expanded}
         onToggle={() => toggleTopic(topic.id)}
-        onDelete={() => remove(topic.id)}
+        onOpen={() => openPage('topic', topic.id)}
+        active={active}
         self={{ kind: 'topic', id: topic.id, parentId: topic.subject_id, subtopicId: null }}
         index={index}
       />
@@ -393,7 +328,9 @@ function SubtopicRow({ subtopic, index }: {
 }) {
   const expanded = useUI((s) => s.expandedSubtopics.includes(subtopic.id))
   const toggleSubtopic = useUI((s) => s.toggleSubtopic)
-  const remove = useDelete(api.deleteSubtopic, 'subtopic')
+  const openPage = useUI((s) => s.openPage)
+  const active = useUI((s) => s.activePage?.kind === 'subtopic'
+                              && s.activePage.id === subtopic.id)
 
   return (
     <li>
@@ -405,7 +342,8 @@ function SubtopicRow({ subtopic, index }: {
         expandable={subtopic.lessons.length > 0}
         expanded={expanded}
         onToggle={() => toggleSubtopic(subtopic.id)}
-        onDelete={() => remove(subtopic.id)}
+        onOpen={() => openPage('subtopic', subtopic.id)}
+        active={active}
         self={{ kind: 'subtopic', id: subtopic.id, parentId: subtopic.topic_id, subtopicId: null }}
         index={index}
         className="text-ink-soft"
@@ -425,9 +363,9 @@ function SubtopicRow({ subtopic, index }: {
 function LessonRow({ lesson, index }: { lesson: LessonBrief; index: number }) {
   const expanded = useUI((s) => s.expandedLessons.includes(lesson.id))
   const toggleLesson = useUI((s) => s.toggleLesson)
-  const active = useUI((s) => s.activeLessonId === lesson.id)
-  const openLesson = useOpenLesson()
-  const remove = useDelete(api.deleteLesson, 'lesson')
+  const active = useUI((s) => s.activePage?.kind === 'lesson'
+                              && s.activePage.id === lesson.id)
+  const openPage = useUI((s) => s.openPage)
 
   // Only worth a chevron if there is something to preview behind it.
   const previewable = lesson.checklist_total > 0
@@ -448,8 +386,7 @@ function LessonRow({ lesson, index }: { lesson: LessonBrief; index: number }) {
         expandable={previewable}
         expanded={expanded}
         onToggle={() => toggleLesson(lesson.id)}
-        onOpen={() => void openLesson(lesson.id)}
-        onDelete={() => remove(lesson.id)}
+        onOpen={() => openPage('lesson', lesson.id)}
         self={{
           kind: 'lesson', id: lesson.id,
           parentId: lesson.topic_id, subtopicId: lesson.subtopic_id,

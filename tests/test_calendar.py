@@ -38,6 +38,14 @@ def _tree(client) -> dict:
     }
 
 
+def _open_calendar(page) -> None:
+    """The calendar lives on the Dashboard now — it lost its own tab, because
+    the Roadmap is the way into notes and the calendar is a summary, not a
+    destination."""
+    page.get_by_test_id("header-home").click()
+    page.get_by_test_id("dash-calendar").wait_for(state="visible")
+
+
 def _note_on(client, subtopic_id: int, day: dt.date) -> dict:
     return client.post(
         "/api/notes",
@@ -152,6 +160,7 @@ def test_calendar_renders_the_current_month_with_pills(page, app) -> None:
         _note_on(c, tree["hybrid"]["id"], TODAY)
 
     page.reload(wait_until="networkidle")
+    _open_calendar(page)
     calendar = page.get_by_test_id("calendar")
     calendar.wait_for(state="visible")
 
@@ -169,6 +178,7 @@ def test_days_without_notes_are_not_clickable(page, app) -> None:
         _tree(c)
 
     page.reload(wait_until="networkidle")
+    _open_calendar(page)
     page.get_by_test_id("calendar").wait_for(state="visible")
 
     assert page.get_by_test_id(f"calendar-day-{TODAY_ISO}").is_disabled()
@@ -187,6 +197,7 @@ def test_clicking_a_day_opens_that_day(page, app) -> None:
         )
 
     page.reload(wait_until="networkidle")
+    _open_calendar(page)
     page.get_by_test_id("calendar").wait_for(state="visible")
     page.get_by_test_id(f"calendar-day-{TODAY_ISO}").click()
 
@@ -208,6 +219,7 @@ def test_month_navigation(page, app) -> None:
         _tree(c)
 
     page.reload(wait_until="networkidle")
+    _open_calendar(page)
     page.get_by_test_id("calendar").wait_for(state="visible")
 
     this_month = TODAY.strftime("%B %Y")
@@ -240,6 +252,7 @@ def test_calendar_does_not_cause_horizontal_scroll(page, app, width: int) -> Non
 
     page.set_viewport_size({"width": width, "height": 900})
     page.reload(wait_until="networkidle")
+    _open_calendar(page)
     page.get_by_test_id("calendar").wait_for(state="visible")
 
     overflow = page.evaluate(

@@ -4,7 +4,6 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, type Note, type Subject } from '../lib/api'
 import { useOpenLesson } from '../lib/openLesson'
 import { useUI } from '../store/ui'
-import { ProcessNotes } from './ProcessNotes'
 
 /** The Notes screen header (spec §14): the note's title and date, the §4.2
  *  block counter, the save dot, and a **Process notes** button showing the
@@ -13,12 +12,15 @@ import { ProcessNotes } from './ProcessNotes'
  *  §4.1 also lets the user create additional notes for a day and rename them,
  *  so the title is editable in place and siblings are switchable.
  */
-export function NoteHeader({ note, saveState }: {
+export function NoteHeader({ note, saveState, titleOverride }: {
   note: Note
   saveState: string
+  /** The page's own name. When present the note has no name of its own and no
+   *  rename control: the page is what it is called. */
+  titleOverride?: string
 }) {
   const qc = useQueryClient()
-  const openSubtopic = useUI((s) => s.openSubtopic)
+  const openNote = useUI((s) => s.openNote)
   const openLesson = useOpenLesson()
   const [moving, setMoving] = useState(false)
   const [naming, setNaming] = useState(false)
@@ -27,6 +29,7 @@ export function NoteHeader({ note, saveState }: {
   // own — it opens under the Lesson's name in the breadcrumb/header."
   const { data: subjects = [] } = useQuery({ queryKey: ['subjects'], queryFn: api.subjects })
   const lesson = note.lesson_id === null ? null : findLesson(subjects, note.lesson_id)
+  const heading = titleOverride ?? lesson?.name
 
   // Sibling notes: same subtopic, same day. Only meaningful for subtopic
   // notes — a resource note is one per resource per day by definition.
@@ -61,25 +64,23 @@ export function NoteHeader({ note, saveState }: {
       setNaming(false)
       await qc.invalidateQueries({ queryKey: ['notes'] })
       qc.setQueryData(['note', created.id], created)
-      openSubtopic(note.subtopic_id ?? -1, created.id)
+      openNote(created.id)
     },
   })
 
-  const pending = note.counts.new + note.counts.edited
-
   return (
     <div className="mb-4 border-b border-line-soft pb-3">
-      {lesson && (
+      {titleOverride === undefined && lesson && (
         <p data-testid="note-breadcrumb" className="mb-1 text-[0.75rem] text-faint">
           {lesson.path}
         </p>
       )}
 
       <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-        {lesson ? (
-          // The lesson names the note; renaming happens on the lesson.
+        {heading !== undefined ? (
+          // The page names the note; renaming happens on the page.
           <h2 data-testid="note-title" className="text-lg font-semibold tracking-tight text-ink">
-            {lesson.name}
+            {heading}
           </h2>
         ) : (
           <EditableTitle
@@ -105,9 +106,6 @@ export function NoteHeader({ note, saveState }: {
       </div>
 
       <div className="mt-2.5 flex flex-wrap items-center gap-2">
-        {/* Spec §14 — Process notes, showing the unprocessed count. */}
-        <ProcessNotes pendingHint={pending} />
-
         {/* §5 — "Move to…" reaches the picker from inside the note, not only
             from the sidebar. */}
         {lesson && (
@@ -129,7 +127,7 @@ export function NoteHeader({ note, saveState }: {
                   <button
                     key={s.id}
                     type="button"
-                    onClick={() => openSubtopic(note.subtopic_id ?? -1, s.id)}
+                    onClick={() => openNote(s.id)}
                     data-testid={`sibling-${s.id}`}
                     className={[
                       'rounded px-1.5 py-0.5 text-[0.6875rem] transition',

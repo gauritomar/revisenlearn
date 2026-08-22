@@ -7,6 +7,7 @@ from . import (
     hierarchy,
     meta,
     notes,
+    pages,
     pipeline,
     practice,
     revision,
@@ -21,6 +22,7 @@ api_router = APIRouter(prefix="/api")
 api_router.include_router(meta.router, tags=["meta"])
 api_router.include_router(hierarchy.router, tags=["hierarchy"])
 api_router.include_router(notes.router, tags=["notes"])
+api_router.include_router(pages.router, tags=["pages"])
 api_router.include_router(resources.router, tags=["resources"])
 api_router.include_router(concepts.router, tags=["concepts"])
 api_router.include_router(graph.router, tags=["graph"])

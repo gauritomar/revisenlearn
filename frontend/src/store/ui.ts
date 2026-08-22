@@ -1,6 +1,8 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 
+import type { TreeKind } from '../lib/api'
+
 type UIState = {
   /** Spec §14 — sidebar collapse state is persisted. */
   leftCollapsed: boolean
@@ -12,6 +14,8 @@ type UIState = {
   activeSubtopicId: number | null
   /** Consolidated addendum §3 — the lesson whose note is open. */
   activeLessonId: number | null
+  /** The open page: every level of the hierarchy is one. */
+  activePage: { kind: TreeKind; id: number } | null
   activeNoteId: number | null
   activeResourceId: number | null
   activeDate: string | null
@@ -35,6 +39,14 @@ type UIState = {
   toggleLesson: (id: number) => void
   openSubtopic: (subtopicId: number, noteId: number) => void
   openLesson: (lessonId: number, noteId: number) => void
+  openPage: (kind: TreeKind, id: number) => void
+  /** The page screen reports the note it loaded, so the right panel can
+   *  follow it. */
+  setActiveNote: (noteId: number) => void
+  /** Open one specific note, rather than a page's own note. A page shows the
+   *  page's note; an extra note under the same subtopic, or a search hit, is
+   *  a note in its own right and opens as itself. */
+  openNote: (noteId: number) => void
   openResource: (resourceId: number) => void
   openDate: (date: string) => void
   clearResource: () => void
@@ -64,6 +76,7 @@ export const useUI = create<UIState>()(
       expandedLessons: [],
       activeSubtopicId: null,
       activeLessonId: null,
+      activePage: null,
       activeNoteId: null,
       activeResourceId: null,
       activeDate: null,
@@ -84,8 +97,22 @@ export const useUI = create<UIState>()(
       openLesson: (lessonId, noteId) =>
         set({
           activeLessonId: lessonId,
+          activePage: { kind: 'lesson', id: lessonId },
           activeNoteId: noteId,
           activeSubtopicId: null,
+          activeResourceId: null,
+          activeDate: null,
+          paletteOpen: false,
+          narrowPanel: null,
+        }),
+      // Opening a page clears the note: the page screen fetches its own, so
+      // the editor never shows the last page's text under a new title.
+      openPage: (kind, id) =>
+        set({
+          activePage: { kind, id },
+          activeLessonId: kind === 'lesson' ? id : null,
+          activeSubtopicId: kind === 'subtopic' ? id : null,
+          activeNoteId: null,
           activeResourceId: null,
           activeDate: null,
           paletteOpen: false,
@@ -95,6 +122,7 @@ export const useUI = create<UIState>()(
         set({
           activeSubtopicId: subtopicId,
           activeLessonId: null,
+          activePage: { kind: 'subtopic', id: subtopicId },
           activeNoteId: noteId,
           // A subtopic note and a resource note are different surfaces; opening
           // one must close the other.
@@ -106,6 +134,7 @@ export const useUI = create<UIState>()(
           activeResourceId: resourceId,
           activeSubtopicId: null,
           activeLessonId: null,
+          activePage: null,
           activeNoteId: null,
           activeDate: null,
           paletteOpen: false,
@@ -115,6 +144,7 @@ export const useUI = create<UIState>()(
           activeDate: date,
           activeNoteId: null,
           activeLessonId: null,
+          activePage: null,
           activeSubtopicId: null,
           activeResourceId: null,
         }),
@@ -123,9 +153,20 @@ export const useUI = create<UIState>()(
         set({
           activeSubtopicId: null,
           activeLessonId: null,
+          activePage: null,
           activeNoteId: null,
           activeResourceId: null,
           activeDate: null,
+        }),
+      setActiveNote: (noteId) => set({ activeNoteId: noteId }),
+      openNote: (noteId) =>
+        set({
+          activeNoteId: noteId,
+          activePage: null,
+          activeResourceId: null,
+          activeDate: null,
+          paletteOpen: false,
+          narrowPanel: null,
         }),
       setPalette: (open) => set({ paletteOpen: open }),
       setAddDialog: (open) => set({ addDialogOpen: open, addSeed: '' }),
@@ -152,6 +193,7 @@ export const useUI = create<UIState>()(
         expandedLessons: s.expandedLessons,
         activeSubtopicId: s.activeSubtopicId,
         activeLessonId: s.activeLessonId,
+        activePage: s.activePage,
         activeNoteId: s.activeNoteId,
         rightTab: s.rightTab,
         activeResourceId: s.activeResourceId,

@@ -325,6 +325,10 @@ def test_dashboard_todays_notes_lists_what_was_written(page, app) -> None:
     _dashboard(page)
     section = page.get_by_test_id("dash-todays-notes")
     section.wait_for(state="visible")
+    # The empty state renders first, so wait for the fetch rather than reading
+    # whichever frame happened to be on screen.
+    page.get_by_test_id(f"todays-note-{note['id']}").wait_for(state="visible",
+                                                              timeout=10_000)
     assert "Hybrid search" in section.inner_text()
     assert "1 block" in section.inner_text()
 

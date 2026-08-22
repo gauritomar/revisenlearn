@@ -31,3 +31,44 @@ export const CheckboxInput = Extension.create({
     ]
   },
 })
+
+
+/** ``` and ```python, from anywhere — including inside a list.
+ *
+ *  The built-in fence rule only fires in a plain paragraph, so a note that is
+ *  mostly bullets (which is most notes here) cannot start a code block
+ *  without first leaving the list by hand. Typing three backticks is an
+ *  unambiguous instruction; this honours it wherever the cursor is.
+ */
+const FENCE = /^```([a-zA-Z0-9+#_-]*)[\s]$/
+
+export const CodeFenceAnywhere = Extension.create({
+  name: 'codeFenceAnywhere',
+
+  addInputRules() {
+    return [
+      new InputRule({
+        find: FENCE,
+        handler: ({ range, match, chain, state }) => {
+          const language = (match[1] || 'plaintext').toLowerCase()
+
+          // Are we inside a list item? Only then is lifting needed — calling
+          // it unconditionally would fail the chain in a plain paragraph.
+          let inList = false
+          const { $from } = state.selection
+          for (let depth = $from.depth; depth > 0; depth--) {
+            const name = $from.node(depth).type.name
+            if (name === 'listItem' || name === 'taskItem') {
+              inList = true
+              break
+            }
+          }
+
+          const run = chain().deleteRange(range)
+          if (inList) run.liftListItem('listItem')
+          run.setNode('codeBlock', { language }).run()
+        },
+      }),
+    ]
+  },
+})

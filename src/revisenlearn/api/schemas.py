@@ -101,6 +101,8 @@ class BlockIn(BaseModel):
     #: checklist_item blocks (consolidated addendum §2).
     checked: bool = False
     url: Optional[str] = None
+    #: `code_block` blocks only: the grammar to highlight with.
+    language: Optional[str] = None
     #: One level of nesting only.
     parent_block_id: Optional[int] = None
     #: For a child whose parent is also new and so has no id yet: the parent's
@@ -116,6 +118,7 @@ class BlockOut(BaseModel):
     text: str
     checked: bool = False
     url: Optional[str] = None
+    language: Optional[str] = None
     parent_block_id: Optional[int] = None
     content_hash: str
     processed_hash: Optional[str] = None

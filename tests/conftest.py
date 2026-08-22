@@ -229,6 +229,21 @@ def _open_page(browser, instance: AppProcess):
         context.close()
 
 
+def assert_is_today(value: str) -> None:
+    """Assert a study_date is "today", without breaking at midnight.
+
+    The suite takes minutes to run, so a module that captured the date at
+    import time and an app that asked the clock a second later can genuinely
+    disagree — which is exactly how three tests failed at 00:0x. Either side
+    of the boundary is today enough.
+    """
+    import datetime as _dt
+
+    today = _dt.date.today()
+    allowed = {today.isoformat(), (today - _dt.timedelta(days=1)).isoformat()}
+    assert value in allowed, f"{value} is not today ({sorted(allowed)})"
+
+
 # --------------------------------------------------------------------------
 # Sidebar navigation (consolidated addendum §5)
 #

@@ -200,7 +200,7 @@ function Chevron({ dir }: { dir: 'left' | 'right' }) {
 /** The "click to open that day" destination. */
 export function DayView({ date }: { date: string }) {
   const clearActive = useUI((s) => s.clearActive)
-  const openSubtopic = useUI((s) => s.openSubtopic)
+  const openNote = useUI((s) => s.openNote)
   const openResource = useUI((s) => s.openResource)
 
   const { data: notes = [], isLoading } = useQuery({
@@ -239,7 +239,10 @@ export function DayView({ date }: { date: string }) {
                   onClick={() =>
                     note.resource_id
                       ? openResource(note.resource_id)
-                      : openSubtopic(note.subtopic_id ?? -1, note.id)
+                      // The day lists notes, so a click opens that note —
+                      // not the page it happens to sit under, which may hold
+                      // a different one.
+                      : openNote(note.id)
                   }
                   className="w-full rounded-lg border border-line bg-surface p-3 text-left transition hover:border-faint"
                 >

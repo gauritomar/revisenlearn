@@ -29,10 +29,18 @@ from revisenlearn import config  # noqa: E402
 from revisenlearn.backup import backup_now  # noqa: E402
 
 #: Children before parents, so nothing dangles even mid-transaction.
+#:
+#: Everything that references the cleared content has to go with it. A
+#: `pipeline_job_blocks` row naming a deleted note is a dangling foreign key,
+#: and since migrations now verify referential integrity before they commit,
+#: leaving one behind makes the *next* app start fail. The jobs themselves
+#: stay: they are the record of what was spent (§14), and cost history is not
+#: content.
 CLEAR_ORDER = (
     "note_lesson_links",
     "note_resource_links",
     "lesson_resource_links",
+    "pipeline_job_blocks",
     "concept_sources",
     # Derived from note blocks (§2), so it goes with them.
     "checklist_items",
@@ -114,8 +122,17 @@ def main() -> int:
             except sqlite3.OperationalError:
                 continue
         conn.commit()
+        # Prove it: a dangling reference here would fail the next migration,
+        # which now checks integrity before committing.
+        violations = conn.execute("PRAGMA foreign_key_check").fetchall()
     finally:
         conn.close()
+
+    if violations:
+        print(f"\nWARNING: {len(violations)} dangling reference(s) remain: "
+              f"{violations[:3]}")
+        print(f"Restore with: cp '{created.path}' '{db_path}'")
+        return 1
 
     print(f"Cleared {cleared} row(s). Schema and settings untouched.")
     print("Restore with: cp '%s' '%s'" % (created.path, db_path))

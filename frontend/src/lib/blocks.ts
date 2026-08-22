@@ -15,6 +15,8 @@ export type DraftBlock = {
   text: string
   /** checklist_item blocks (consolidated addendum §2). */
   checked?: boolean
+  /** `code_block` only: the grammar it is highlighted with. */
+  language?: string | null
   /** One level of nesting: the index of the parent in this same payload. */
   parent_index?: number | null
 }
@@ -23,6 +25,7 @@ type Serialised = {
   block_type: string
   text: string
   checked?: boolean
+  language?: string | null
   parentIndex?: number | null
 }
 
@@ -69,7 +72,13 @@ export function docToBlocks(doc: JSONContent): Serialised[] {
         out.push({ block_type: 'quote', text: textOf(node) })
         break
       case 'codeBlock':
-        out.push({ block_type: 'code_block', text: textOf(node) })
+        // The language is the block's, not the text's: a note reopens in the
+        // grammar it was written in rather than one guessed from the code.
+        out.push({
+          block_type: 'code_block',
+          text: textOf(node),
+          language: (node.attrs?.language as string) || null,
+        })
         break
       case 'horizontalRule':
         out.push({ block_type: 'divider', text: '' })
@@ -177,7 +186,11 @@ export function blocksToDoc(blocks: Block[]): JSONContent {
         content.push({ type: 'blockquote', content: [paragraph(block.text)] })
         break
       case 'code_block':
-        content.push({ type: 'codeBlock', content: inline(block.text) })
+        content.push({
+          type: 'codeBlock',
+          attrs: { language: block.language ?? null },
+          content: inline(block.text),
+        })
         break
       case 'divider':
         content.push({ type: 'horizontalRule' })
@@ -255,6 +268,7 @@ export function reconcile(
     block_type: s.block_type,
     text: s.text,
     checked: s.checked ?? false,
+    language: s.language ?? null,
     // Resolved server-side against this same payload, so a child saved
     // alongside a brand-new parent still lands under it.
     parent_index: s.parentIndex ?? null,

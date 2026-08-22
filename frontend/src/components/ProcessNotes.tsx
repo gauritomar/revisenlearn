@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
 import { api, type PendingBlock, type PipelineJob } from '../lib/api'
+import { useUI } from '../store/ui'
 
 /** Spec §14 — the **Process notes** button, showing the unprocessed count.
  *
@@ -122,6 +123,8 @@ function Preview({ count, onConfirm, onCancel, pending }: {
     refetchOnMount: 'always',
   })
 
+  const openPage = useUI((s) => s.openPage)
+
   const grouped = new Map<string, PendingBlock[]>()
   for (const block of data?.blocks ?? []) {
     const list = grouped.get(block.note_title) ?? []
@@ -158,7 +161,26 @@ function Preview({ count, onConfirm, onCancel, pending }: {
           ) : (
             [...grouped.entries()].map(([title, blocks]) => (
               <section key={title} className="mb-3">
-                <h3 className="mb-1 text-[0.75rem] font-medium text-ink">{title}</h3>
+                {/* The heading is the way back to the writing: seeing a
+                    snippet you do not recognise should not mean closing this
+                    and hunting for it. */}
+                <h3 className="mb-1 text-[0.75rem] font-medium text-ink">
+                  {blocks[0]?.page_kind && blocks[0]?.page_id ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        openPage(blocks[0].page_kind!, blocks[0].page_id!)
+                        onCancel()
+                      }}
+                      data-testid={`preview-open-${blocks[0].page_kind}-${blocks[0].page_id}`}
+                      className="rounded px-1 py-0.5 text-accent-deep transition hover:bg-accent-wash"
+                    >
+                      {title} →
+                    </button>
+                  ) : (
+                    title
+                  )}
+                </h3>
                 <ul className="space-y-0.5">
                   {blocks.map((block) => (
                     <li

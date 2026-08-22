@@ -122,6 +122,55 @@ body {
   padding-left: 1.35rem;
 }
 
+/* Code blocks. The language rides on the block (```python, ```sql …) and is
+   shown in the corner so a long note stays readable. Highlighting is
+   lowlight/highlight.js, bundled — no CDN, nothing fetched. */
+.note-prose pre {
+  position: relative;
+}
+.note-prose pre[data-language]::before {
+  content: attr(data-language);
+  position: absolute;
+  top: 0.4rem;
+  right: 0.55rem;
+  font-family: var(--font-ui);
+  font-size: 0.625rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-faint);
+  pointer-events: none;
+}
+
+/* A restrained light palette: comments recede, strings and keywords carry the
+   structure, everything else stays ink. Reading notes should not feel like
+   reading a Christmas tree. */
+.note-prose .hljs-comment,
+.note-prose .hljs-quote        { color: #8A8578; font-style: italic; }
+.note-prose .hljs-keyword,
+.note-prose .hljs-selector-tag,
+.note-prose .hljs-literal,
+.note-prose .hljs-section,
+.note-prose .hljs-doctag,
+.note-prose .hljs-type,
+.note-prose .hljs-name,
+.note-prose .hljs-strong       { color: #7A3E9D; }
+.note-prose .hljs-string,
+.note-prose .hljs-title,
+.note-prose .hljs-attr,
+.note-prose .hljs-attribute,
+.note-prose .hljs-symbol,
+.note-prose .hljs-bullet,
+.note-prose .hljs-addition     { color: #2F7A4E; }
+.note-prose .hljs-number,
+.note-prose .hljs-meta,
+.note-prose .hljs-built_in,
+.note-prose .hljs-builtin-name,
+.note-prose .hljs-params,
+.note-prose .hljs-variable,
+.note-prose .hljs-template-variable { color: #A65B1E; }
+.note-prose .hljs-emphasis     { font-style: italic; }
+.note-prose .hljs-deletion     { color: var(--color-stale); }
+
 /* §3 — the automatic day marker in a note that spans months. */
 .note-prose .date-divider {
   display: flex;

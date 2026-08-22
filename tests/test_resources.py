@@ -13,6 +13,8 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 
 import pytest
 
+from conftest import assert_is_today
+
 TODAY = dt.date.today().isoformat()
 
 
@@ -374,7 +376,7 @@ def test_a_resource_gets_todays_note_created_on_the_spot(app, client) -> None:
     ).json()
 
     assert note["resource_id"] == resource["id"]
-    assert note["study_date"] == TODAY
+    assert_is_today(note["study_date"])
     # Titled after the resource, and filed where the resource is filed.
     assert note["title"] == "RAG from scratch"
     assert note["subtopic_id"] == branch["subtopic"]["id"]

@@ -28,7 +28,20 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 
 #: The revision immediately before the notes-first rework.
 BEFORE = "17da8cdf5990"
-HEAD = "06e630770a79"
+
+#: Read from Alembic rather than pinned: the next migration to be written
+#: should not fail these tests for the crime of existing.
+def _head() -> str:
+    from alembic.config import Config
+    from alembic.script import ScriptDirectory
+
+    script = ScriptDirectory.from_config(Config(str(REPO_ROOT / "alembic.ini")))
+    heads = script.get_heads()
+    assert len(heads) == 1, f"expected a single head, got {heads}"
+    return heads[0]
+
+
+HEAD = _head()
 
 
 def _alembic(db: Path, *args: str) -> subprocess.CompletedProcess:

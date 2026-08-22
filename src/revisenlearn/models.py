@@ -156,6 +156,9 @@ class NoteBlock(SQLModel, table=True):
     checked: bool = False
     #: A URL written on this block. §4 auto-detects a Resource from it.
     url: Optional[str] = None
+    #: `code_block` blocks only: which grammar to highlight with. Stored so a
+    #: note reopens as it was written, rather than guessing from the text.
+    language: Optional[str] = None
     #: One level of nesting only.
     parent_block_id: Optional[int] = Field(default=None,
                                            foreign_key="note_blocks.id")

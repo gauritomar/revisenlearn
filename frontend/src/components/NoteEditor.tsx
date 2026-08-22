@@ -5,11 +5,14 @@ import StarterKit from '@tiptap/starter-kit'
 import Placeholder from '@tiptap/extension-placeholder'
 import TaskList from '@tiptap/extension-task-list'
 import TaskItem from '@tiptap/extension-task-item'
+import CodeBlockLowlight from '@tiptap/extension-code-block-lowlight'
 
 import { api, type Note } from '../lib/api'
-import { CheckboxInput } from '../lib/checkboxInput'
+import { CheckboxInput, CodeFenceAnywhere } from '../lib/checkboxInput'
+import { lowlight } from '../lib/highlight'
 import { DateDivider } from '../lib/dateDivider'
 import { blocksToDoc, docToBlocks, reconcile } from '../lib/blocks'
+import { useRefreshEverything } from '../lib/refresh'
 import { BlockIndicators, buildStateIndex } from '../lib/blockIndicators'
 import { NoteHeader } from './NoteHeader'
 
@@ -20,7 +23,12 @@ const INTERVAL_MS = 30_000
 
 type SaveState = 'clean' | 'dirty' | 'saving' | 'saved' | 'error'
 
-export function NoteEditor({ noteId }: { noteId: number }) {
+export function NoteEditor({ noteId, titleOverride }: {
+  noteId: number
+  /** When the note is a page's note, the page names it (§3's rule for
+   *  lessons, extended to every level). */
+  titleOverride?: string
+}) {
   const qc = useQueryClient()
   const { data: note } = useQuery({ queryKey: ['note', noteId], queryFn: () => api.note(noteId) })
 
@@ -46,7 +54,23 @@ export function NoteEditor({ noteId }: { noteId: number }) {
         // Spec §4.1 fixes the block set. Everything StarterKit adds beyond it
         // stays off.
         heading: { levels: [1, 2, 3] },
+        // Replaced below by the highlighting version.
+        codeBlock: false,
       }),
+      // ``` or ```python opens a code block; the language is remembered on
+      // the block and highlighted locally — no network, no CDN.
+      CodeBlockLowlight.extend({
+        // Tiptap puts the language on the inner <code> as `language-python`.
+        // The corner label is drawn on the <pre>, so it needs it there too.
+        renderHTML({ node, HTMLAttributes }) {
+          const language = node.attrs.language || 'plaintext'
+          return [
+            'pre',
+            { ...HTMLAttributes, 'data-language': language },
+            ['code', { class: `language-${language}` }, 0],
+          ]
+        },
+      }).configure({ lowlight, defaultLanguage: 'plaintext' }),
       // Consolidated addendum §2 — "Typing `- [ ] text` creates one".
       // TaskList's own input rule fires on that exact prefix, so the syntax
       // works in the editor as well as on the server (where a paste of the
@@ -54,8 +78,12 @@ export function NoteEditor({ noteId }: { noteId: number }) {
       TaskList,
       TaskItem.configure({ nested: true }),
       CheckboxInput,
+      CodeFenceAnywhere,
       DateDivider,
-      Placeholder.configure({ placeholder: 'Start writing. Bullets are fastest.' }),
+      Placeholder.configure({
+        placeholder:
+          'Write. "- " bullet · "- [ ] " checkbox · "# " heading · "```python" code',
+      }),
       BlockIndicators.configure({ getIndex: () => stateIndexRef.current }),
     ],
     content: { type: 'doc', content: [{ type: 'paragraph' }] },
@@ -67,6 +95,8 @@ export function NoteEditor({ noteId }: { noteId: number }) {
     },
   })
 
+  const refresh = useRefreshEverything()
+
   const save = useCallback(async () => {
     const current = noteRef.current
     if (!editor || !current) return
@@ -76,21 +106,17 @@ export function NoteEditor({ noteId }: { noteId: number }) {
       const payload = reconcile(serialised, current.blocks)
       const updated = await api.saveBlocks(current.id, payload)
       qc.setQueryData(['note', current.id], updated)
-      // A save changes what the pipeline owes, so the Process notes count is
-      // now stale (spec §14: the button carries that count).
-      void qc.invalidateQueries({ queryKey: ['pipeline-pending'] })
-      // …and it may have just created or removed a checklist item, which the
-      // right panel, the sidebar counts and the Roadmap all read (§2).
-      void qc.invalidateQueries({ queryKey: ['note-panel', current.id] })
-      void qc.invalidateQueries({ queryKey: ['subjects'] })
-      void qc.invalidateQueries({ queryKey: ['roadmap'] })
+      // A save changes what the pipeline owes (spec §14: the button carries
+      // that count), and may have just created a checklist item or a resource
+      // that the panel, the tree and the Roadmap all read (§2, §4).
+      void refresh()
       setSaveState('saved')
     } catch {
       // Principle §1.2 — never lose what was typed. The document stays in the
       // editor and the next tick retries.
       setSaveState('error')
     }
-  }, [editor, qc])
+  }, [editor, qc, refresh])
 
   // Load the stored note into the editor once it has actually arrived.
   //
@@ -162,6 +188,15 @@ export function NoteEditor({ noteId }: { noteId: number }) {
 
   if (!note) {
     return <div className="p-6 text-[0.8125rem] text-faint">Opening note…</div>
+  }
+
+  if (titleOverride !== undefined) {
+    return (
+      <>
+        <NoteHeader note={note} saveState={saveState} titleOverride={titleOverride} />
+        <EditorContent editor={editor} />
+      </>
+    )
   }
 
   return (

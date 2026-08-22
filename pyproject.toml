@@ -20,13 +20,12 @@ dependencies = [
     # Phase 7. Spec §2 names "py-fsrs"; the distribution is published as
     # `fsrs`. Do not reimplement FSRS.
     "fsrs>=5.0",
+    # Phase 5+. Not optional: without it "Process notes" cannot call anything
+    # and prose revision has no questions (spec §16). It was an extra, and
+    # `uv sync` does not install extras, so a real run failed with
+    # "cannot import name 'genai' from 'google'".
+    "google-genai>=2.0.0",
 ]
-
-[project.optional-dependencies]
-# Phase 5+.
-llm = ["google-genai>=2.0.0"]
-# Phase 7+.
-fsrs = ["fsrs>=5.0"]
 
 [dependency-groups]
 dev = [

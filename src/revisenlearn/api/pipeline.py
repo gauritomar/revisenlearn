@@ -65,7 +65,8 @@ class JobDetail(BaseModel):
 
 
 class PendingBlock(BaseModel):
-    """One block that would be sent, with enough text to recognise it."""
+    """One block that would be sent, with enough text to recognise it — and
+    where it came from, so the preview can take the user there."""
 
     note_block_id: int
     note_id: int
@@ -73,6 +74,9 @@ class PendingBlock(BaseModel):
     block_type: str
     snippet: str
     state: str          # unprocessed | stale
+    #: The page this note belongs to, for "click it and go there".
+    page_kind: str | None = None
+    page_id: int | None = None
 
 
 class PendingOut(BaseModel):
@@ -109,20 +113,40 @@ def pending(subject_id: int | None = None,
     if not preview:
         return out
 
-    titles: dict[int, str] = {}
+    def page_of(note: Note | None) -> tuple[str | None, int | None]:
+        """Which page owns this note. Innermost wins: a note on a lesson is
+        the lesson's, not its subtopic's."""
+        if note is None:
+            return None, None
+        if note.lesson_id:
+            return "lesson", note.lesson_id
+        if note.subtopic_id:
+            return "subtopic", note.subtopic_id
+        if note.topic_id:
+            return "topic", note.topic_id
+        if note.subject_id:
+            return "subject", note.subject_id
+        return None, None
+
+    seen: dict[int, tuple[str, str | None, int | None]] = {}
     rows: list[PendingBlock] = []
     for block in blocks:
-        if block.note_id not in titles:
+        if block.note_id not in seen:
             note = session.get(Note, block.note_id)
-            titles[block.note_id] = note.title if note else "(untitled)"
+            kind, page_id = page_of(note)
+            seen[block.note_id] = (note.title if note else "(untitled)",
+                                   kind, page_id)
+        title, page_kind, page_id = seen[block.note_id]
         text = (block.text or "").strip()
         rows.append(PendingBlock(
             note_block_id=block.id,
             note_id=block.note_id,
-            note_title=titles[block.note_id],
+            note_title=title,
             block_type=block.block_type,
             snippet=text[:160] + ("…" if len(text) > 160 else ""),
             state=("stale" if block.processed_hash is not None else "unprocessed"),
+            page_kind=page_kind,
+            page_id=page_id,
         ))
 
     out.blocks = rows

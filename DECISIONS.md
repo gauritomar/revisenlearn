@@ -701,7 +701,85 @@ makes "no key anywhere" a state the suite can actually reach.
 
 ---
 
-## 11. What is not built
+## 11. Pages everywhere, and the Roadmap as the way in
+
+The user's direction, after using the rework: *"let's keep just roadmap as a
+way to add notes, no other place, this is now the centralised way to access
+notes"* and *"a Notion type interface where everything is a page and pages
+under pages — when I open a page I should be able to see all the pages under
+it too"*. That overrides parts of the consolidated addendum, which is fine:
+the addendum was a plan, and this is the person using the thing.
+
+### Every level is a page, so page notes are continuous
+
+Spec §4.1 says "one note per (Subtopic, day)". Addendum §3 already broke that
+for lessons — one continuous note, with a date divider on the first edit of a
+new day — because a note per session fragments a subject you return to. That
+reasoning does not stop at lessons, and a page whose note changes identity at
+midnight is not a page. So Subject, Topic and Subtopic notes are continuous
+too, and `GET /api/pages/{kind}/{id}` is the one endpoint that answers "what
+is this page, what is above it, what is inside it".
+
+Resource notes are the exception and stay per-resource-per-day: §5.1's split
+view is a reading session, not a page.
+
+### Names navigate, at every level
+
+Addendum §5 made Subject/Topic/Subtopic names inert because only a Lesson had
+a note. Now that every level has one, every name navigates — which is the
+Notion behaviour §5 was pointing at ("clicking the **name** navigates to open
+that page"). The chevron still expands in place.
+
+### Delete lives in the Roadmap only
+
+Hover-trash on every sidebar row was in the addendum, and it was wrong in
+practice: the sidebar is what you move through, and a delete control on a row
+you are passing over is an accident waiting to happen. The Roadmap is where
+you go to change the shape of things, so deletion lives there, behind one
+confirmation, for all four levels. Todos gained one too — but only for
+standalone todos: a lesson or a checklist item shown on that board lives
+somewhere else, and deleting it from a view of it would be deleting it from
+the wrong place.
+
+### One refresh, not fifteen invalidations
+
+"Every time I add something to the app I should be able to refresh it and it
+should be updated everywhere." Each mutation used to invalidate the two or
+three query keys its author remembered, which is how a screen ends up stale
+after an edit somewhere else. `useRefreshEverything` invalidates the whole set
+in one call, and mutations use it instead of listing keys.
+
+### Code blocks carry their language
+
+Highlighting is bundled (lowlight with sixteen grammars, Python and SQL
+first), never fetched. The language is a column on `note_blocks`, because a
+note should reopen in the grammar it was written in rather than one guessed
+from the text. The built-in fence rule only fires in a plain paragraph, so a
+note that is mostly bullets — which is most notes here — could not start a
+code block without leaving the list by hand; a small input rule lifts out of
+the list and opens the block wherever the cursor is.
+
+### `google-genai` was an optional extra, so the LLM never worked
+
+`run.sh` runs `uv sync`, which does not install extras, and the client was
+declared under `[project.optional-dependencies]`. The first real "Process
+notes" therefore failed with *cannot import name 'genai' from 'google'* after
+queueing a job and charging nothing. Without it the pipeline cannot run and
+prose revision has no questions (§16), so it is not optional and is now a
+core dependency.
+
+### The reset script left dangling references
+
+`reset_content.py` cleared notes and note blocks but not `pipeline_job_blocks`,
+which points at both. Harmless until migrations started verifying referential
+integrity before committing — then the next launch failed the check and the
+app would not start. The script clears them now and runs
+`PRAGMA foreign_key_check` itself before declaring success. Jobs survive:
+they are the record of what was spent, and cost history is not content.
+
+---
+
+## 12. What is not built
 
 Honest list, so nothing here is a surprise.
 

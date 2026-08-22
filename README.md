@@ -106,19 +106,30 @@ logged — startup logs only `present`/`absent` and which source it came from.
 
 ## Daily workflow
 
-1. Open the app. It lands on the calendar; the dashboard (the logo, or the nav)
-   shows what is due and what you were working on.
-2. Open a lesson in the left sidebar — a chevron expands a level in place, a
-   lesson's **name** opens its note. Each lesson has one continuous note that
-   grows over time, with a date divider dropped in automatically on the first
-   edit of a new day.
-3. Write. Bullets are the fast path. `- [ ]` makes a checklist item, which
-   shows up in the right panel, the Roadmap and Todos — all three write back to
-   the same line in the note. A URL becomes a resource on its own.
-4. Autosave is debounced 800ms after you stop typing, plus on blur, plus every
+1. Open the app. It lands on the **Roadmap**, which is the whole curriculum
+   and the way into every note. The Dashboard (the logo, or the nav) shows the
+   calendar first, then what is due and what you were working on.
+2. Everything is a page: a Subject, a Topic, a Subtopic and a Lesson all open
+   the same way and all have a note. Clicking a name anywhere — Roadmap,
+   sidebar, breadcrumb — opens that page, and a page lists the pages inside
+   it, so you can add a Topic from inside a Subject without going anywhere.
+3. A page has **one continuous note** that grows over time, with a date
+   divider dropped in automatically on the first edit of a new day.
+4. Write. Bullets are the fast path:
+   - `- ` a bullet, `# ` a heading, `> ` a quote
+   - `- [ ] ` a checklist item, which appears in the right panel, the Roadmap
+     and Todos — all three write back to the same line in the note
+   - ` ```python ` (or `sql`, `javascript`, …) a syntax-highlighted code
+     block, and it works inside a list too
+   - a URL becomes a resource on its own, no dialog
+5. Autosave is debounced 800ms after you stop typing, plus on blur, plus every
    30 seconds; `⌘S` forces it.
-5. `⌘K` searches everything you have written, and adds a subject, topic,
+6. `⌘K` searches everything you have written, and adds a subject, topic,
    subtopic or lesson anywhere in the tree without expanding it first.
+
+Adding and deleting live in the Roadmap. The sidebar is for getting around:
+it has no delete, because a trash icon on a row you are only passing through
+is an accident waiting to happen.
 
 Or start from a resource, which is the faster daily entry point: **Add
 resource**, paste a link, press Enter. Click it to get a split view — the
@@ -126,8 +137,10 @@ resource, its status and progress slider on the left, today's note for it on
 the right. The dashboard's **Study next** ranks what to pick up, and the
 calendar shows what you wrote on any day.
 
-When you have written enough, press **Process notes**. It shows exactly which
-blocks it would send before it
+When you have written enough, press **Process notes** in the header — it
+counts every pending block in the app, wherever you are. It shows exactly
+which blocks it would send, and each note in that list is a link to the page
+it came from, before it
 spends anything, then extracts concepts from your notes, deduplicates them
 against what you already know, and generates a pool of multiple-choice
 questions per concept. **Runs** shows what each job created and exactly what it

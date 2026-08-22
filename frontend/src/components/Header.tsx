@@ -1,5 +1,6 @@
 import { useUI } from '../store/ui'
 import type { AppMeta } from '../lib/api'
+import { ProcessNotes } from './ProcessNotes'
 
 /** Spec §14:
  *  [logo] Revise & Learn   Dashboard · Notes · Practice · Revision · Graph   ⌘K  Usage  Settings
@@ -7,10 +8,11 @@ import type { AppMeta } from '../lib/api'
 
 // Screens that do not exist until a later phase are rendered but disabled, so
 // the shell shows the real shape of the app rather than a fake one.
+// Calendar lives on the Dashboard now, and notes are reached through the
+// Roadmap — "this is now the centralised way to access notes" — so neither
+// has a tab of its own.
 const NAV: Array<{ label: string; phase: number }> = [
-  { label: 'Calendar', phase: 2 },
   { label: 'Dashboard', phase: 1 },
-  { label: 'Notes', phase: 2 },
   { label: 'Roadmap', phase: 2 },
   { label: 'Todos', phase: 2 },
   { label: 'Runs', phase: 5 },
@@ -105,6 +107,14 @@ export function Header({ meta, view, onView, narrow }: {
       </nav>
 
       <div className="ml-auto flex shrink-0 items-center gap-1.5">
+        {/* Spec §14 — Process notes, showing the unprocessed count. It counts
+            every pending block in the app, not the open note's, so it belongs
+            in the header: since the Roadmap became the way in, requiring a
+            note to be open before you could spend was backwards. */}
+        <span className="hidden sm:block">
+          <ProcessNotes />
+        </span>
+
         <button
           type="button"
           onClick={() => setPalette(true)}

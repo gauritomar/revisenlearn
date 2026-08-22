@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
 
 import { api, type Subject } from '../lib/api'
 import { useOpenLesson } from '../lib/openLesson'
+import { useRefreshEverything } from '../lib/refresh'
 import { useUI } from '../store/ui'
 
 /** Quick-add (consolidated addendum §5).
@@ -61,7 +62,7 @@ export function AddDialog() {
   const toggleSubject = useUI((s) => s.toggleSubject)
   const toggleTopic = useUI((s) => s.toggleTopic)
   const toggleSubtopic = useUI((s) => s.toggleSubtopic)
-  const qc = useQueryClient()
+  const refresh = useRefreshEverything()
   const openLesson = useOpenLesson()
   const seed = useUI((s) => s.addSeed)
 
@@ -133,8 +134,7 @@ export function AddDialog() {
         reveal(null, parent.topicId, parent.id)
       }
 
-      await qc.invalidateQueries({ queryKey: ['subjects'] })
-      await qc.invalidateQueries({ queryKey: ['roadmap'] })
+      await refresh()
       setOpen(false)
       // A new lesson is a place to write, so go there (§3).
       if (createdLessonId !== null) await openLesson(createdLessonId)

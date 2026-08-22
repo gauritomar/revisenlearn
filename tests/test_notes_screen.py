@@ -14,7 +14,7 @@ import datetime as dt
 import httpx
 import pytest
 
-from conftest import open_lesson
+from conftest import assert_is_today, open_lesson
 
 TODAY = dt.date.today().isoformat()
 
@@ -45,8 +45,10 @@ def _open_subtopic(page) -> None:
 
 def _open_freeform_note(page, note_id: int) -> None:
     """A note with no lesson — still fully valid (§3), reached the way the user
-    reaches one: through the calendar day it was written on."""
-    page.get_by_test_id("nav-calendar").click()
+    reaches one: through the calendar day it was written on. The calendar
+    lives on the Dashboard now rather than in a tab of its own."""
+    page.get_by_test_id("header-home").click()
+    page.get_by_test_id("dash-calendar").wait_for(state="visible")
     page.get_by_test_id(f"calendar-day-{TODAY}").click()
     page.get_by_test_id(f"day-note-{note_id}").click()
     page.get_by_test_id("note-editor").wait_for(state="visible")
@@ -83,7 +85,7 @@ def test_additional_notes_can_be_created_for_the_same_day(app, client) -> None:
     ).json()
 
     assert second["id"] != first["id"]
-    assert second["study_date"] == TODAY
+    assert_is_today(second["study_date"])
 
     listed = client.get(
         "/api/notes",

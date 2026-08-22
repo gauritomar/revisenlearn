@@ -1,8 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 
-import { api, type AppMeta } from './lib/api'
-import { useOpenLesson } from './lib/openLesson'
+import { api, type AppMeta, type TreeKind } from './lib/api'
 import { useUI } from './store/ui'
 import { Header } from './components/Header'
 import { LeftSidebar } from './components/LeftSidebar'
@@ -14,11 +13,12 @@ import { AddDialog } from './components/AddDialog'
 import { ResourceQuickAdd } from './components/ResourceQuickAdd'
 import { ResourceList } from './components/ResourceList'
 import { ResourceSplitView } from './components/ResourceSplitView'
-import { CalendarScreen, DayView } from './components/Calendar'
+import { DayView } from './components/Calendar'
 import { Settings } from './components/Settings'
 import { Jobs } from './components/Jobs'
 import { Practice } from './components/Practice'
 import { Revision } from './components/Revision'
+import { PageScreen } from './components/PageScreen'
 import { Roadmap, Todos } from './components/Roadmap'
 import { Graph } from './components/Graph'
 import { ShortcutOverlay, Usage } from './components/Usage'
@@ -41,15 +41,14 @@ const COLLAPSE_BELOW = 900
 
 export function App() {
   const { data: meta } = useQuery({ queryKey: ['meta'], queryFn: api.meta })
-  // Consolidated addendum §7 — the app opens on Calendar. Dashboard stays
-  // reachable from the nav and from the header button.
-  const [view, setView] = useState('Calendar')
+  // The Roadmap is the way into notes, so the app opens there.
+  const [view, setView] = useState('Roadmap')
 
   const leftCollapsed = useUI((s) => s.leftCollapsed)
   const rightCollapsed = useUI((s) => s.rightCollapsed)
   const narrowPanel = useUI((s) => s.narrowPanel)
   const setNarrowPanel = useUI((s) => s.setNarrowPanel)
-  const activeLessonId = useUI((s) => s.activeLessonId)
+  const activePage = useUI((s) => s.activePage)
   const activeNoteId = useUI((s) => s.activeNoteId)
   const activeResourceId = useUI((s) => s.activeResourceId)
   const activeDate = useUI((s) => s.activeDate)
@@ -64,7 +63,7 @@ export function App() {
     () => typeof window !== 'undefined' && window.innerWidth < COLLAPSE_BELOW,
   )
 
-  useLessonRoute(activeLessonId)
+  usePageRoute(activePage)
 
   useEffect(() => {
     const mq = window.matchMedia(`(max-width: ${COLLAPSE_BELOW - 1}px)`)
@@ -123,6 +122,7 @@ export function App() {
           <MainContent
             view={view}
             onView={goToView}
+            activePage={activePage}
             activeNoteId={activeNoteId}
             activeResourceId={activeResourceId}
             activeDate={activeDate}
@@ -160,9 +160,11 @@ export function App() {
   )
 }
 
-function MainContent({ view, onView, activeNoteId, activeResourceId, activeDate, meta }: {
+function MainContent({ view, onView, activePage, activeNoteId, activeResourceId,
+                      activeDate, meta }: {
   view: string
   onView: (v: string) => void
+  activePage: { kind: TreeKind; id: number } | null
   activeNoteId: number | null
   activeResourceId: number | null
   activeDate: string | null
@@ -170,6 +172,7 @@ function MainContent({ view, onView, activeNoteId, activeResourceId, activeDate,
 }) {
   // An open surface wins over the current tab — the user clicked into it.
   if (activeResourceId !== null) return <ResourceSplitView resourceId={activeResourceId} />
+  if (activePage !== null) return <PageScreen kind={activePage.kind} id={activePage.id} />
   if (activeNoteId !== null) return <NoteEditor noteId={activeNoteId} />
   if (activeDate !== null) return <DayView date={activeDate} />
   if (view === 'Settings') return <Settings meta={meta} />
@@ -180,63 +183,46 @@ function MainContent({ view, onView, activeNoteId, activeResourceId, activeDate,
   if (view === 'Todos') return <Todos />
   if (view === 'Graph') return <Graph />
   if (view === 'Usage') return <Usage />
-  if (view === 'Calendar') return <CalendarScreen />
   if (view === 'Resources') return <ResourceList />
-  if (view === 'Notes') return <NotesEmpty />
   return <Dashboard onView={onView} />
 }
 
-function NotesEmpty() {
-  const setAddDialog = useUI((s) => s.setAddDialog)
-  return (
-    <div className="mx-auto w-full max-w-3xl px-4 py-6 sm:px-6" data-testid="notes-empty">
-      <h2 className="text-xl font-semibold tracking-tight text-ink">Notes</h2>
-      <p className="mt-1 text-[0.875rem] leading-relaxed text-muted">
-        Open a lesson in the sidebar to write against it &mdash; each lesson has
-        one continuous note. Resources and calendar days have their own notes
-        too.
-      </p>
-      <button
-        type="button"
-        onClick={() => setAddDialog(true)}
-        className="mt-4 rounded-md border border-line bg-surface px-3 py-1.5 text-[0.8125rem] text-ink transition hover:border-accent hover:text-accent-deep"
-      >
-        Add a subject
-      </button>
-    </div>
-  )
-}
 
-
-/** Consolidated addendum §3 — "real page navigation (e.g. route
- *  `/lessons/{id}`), not an inline pane swap."
+/** Real page navigation, in the hash.
  *
- *  The app is a single local window with no router, so the route lives in the
- *  hash: opening a lesson pushes `#/lessons/12`, which means Back works, the
- *  URL says where you are, and a reload lands on the same note. Everything
- *  else in the app stays on the shell's own state.
+ *  Consolidated addendum §3 asked for "real page navigation (e.g. route
+ *  `/lessons/{id}`), not an inline pane swap"; now that every level of the
+ *  hierarchy is a page, the route covers all four. One window, no router, so
+ *  the route lives in `location.hash`: opening a page pushes
+ *  `#/pages/subtopic/3`, Back works, and a reload lands where you were.
  */
-function useLessonRoute(activeLessonId: number | null) {
-  const openLesson = useOpenLesson()
+const PAGE_KINDS: TreeKind[] = ['subject', 'topic', 'subtopic', 'lesson']
+
+function usePageRoute(activePage: { kind: TreeKind; id: number } | null) {
+  const openPage = useUI((s) => s.openPage)
   const clearActive = useUI((s) => s.clearActive)
 
   // State → URL.
   useEffect(() => {
-    const wanted = activeLessonId === null ? '' : `#/lessons/${activeLessonId}`
+    const wanted = activePage === null
+      ? '' : `#/pages/${activePage.kind}/${activePage.id}`
     if (window.location.hash === wanted) return
     if (wanted) window.history.pushState(null, '', wanted)
     else window.history.pushState(null, '', window.location.pathname)
-  }, [activeLessonId])
+  }, [activePage?.kind, activePage?.id])
 
   // URL → state, for Back, Forward and a reload.
   useEffect(() => {
     const apply = () => {
-      const match = /^#\/lessons\/(\d+)$/.exec(window.location.hash)
+      const match = /^#\/pages\/([a-z]+)\/(\d+)$/.exec(window.location.hash)
       const state = useUI.getState()
-      if (match) {
-        const id = Number(match[1])
-        if (state.activeLessonId !== id) void openLesson(id)
-      } else if (state.activeLessonId !== null) {
+      if (match && (PAGE_KINDS as string[]).includes(match[1])) {
+        const kind = match[1] as TreeKind
+        const id = Number(match[2])
+        if (state.activePage?.kind !== kind || state.activePage?.id !== id) {
+          openPage(kind, id)
+        }
+      } else if (state.activePage !== null) {
         clearActive()
       }
     }

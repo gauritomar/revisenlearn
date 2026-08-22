@@ -72,6 +72,21 @@ def _subtopic_id(app) -> int:
     return app.query("SELECT id FROM subtopics")[0][0]
 
 
+def _lesson_field(page, app):
+    """Open the subtopic's "+ Lesson" field and return it.
+
+    Adding is one click deeper than it was: the Roadmap is now the only place
+    that adds *and* deletes, so every row keeps its controls tucked away until
+    it is hovered rather than showing a permanent input per subtopic.
+    """
+    sid = _subtopic_id(app)
+    page.get_by_test_id(f"roadmap-open-subtopic-{sid}").hover()
+    page.get_by_test_id(f"add-subtopic-child-{sid}").click()
+    field = page.get_by_test_id(f"add-lesson-subtopic-{sid}")
+    field.wait_for(state="visible")
+    return field
+
+
 def _write_items(app, lesson_id: int, *texts: str) -> list[int]:
     """Put checklist items on a lesson the only way there is: type them into
     its note (§2 — "This table has no dedicated CRUD UI")."""
@@ -96,7 +111,7 @@ def test_enter_adds_a_lesson_and_reopens_the_row(page_roadmap, roadmap_app) -> N
     a fresh '+ Add lesson' row below it, so multiple lessons can be added in a
     fast burst without re-clicking anything.\""""
     page = page_roadmap
-    field = page.get_by_test_id(f"add-lesson-subtopic-{_subtopic_id(roadmap_app)}")
+    field = _lesson_field(page, roadmap_app)
 
     field.click()
     for name in ["Window functions", "Two pointers", "Byte-pair encoding"]:
@@ -114,21 +129,21 @@ def test_enter_adds_a_lesson_and_reopens_the_row(page_roadmap, roadmap_app) -> N
     assert field.evaluate("el => el === document.activeElement")
 
 
-def test_tab_opens_the_note_of_the_lesson_just_added(page_roadmap,
-                                                    roadmap_app) -> None:
-    """The addendum's Tab-to-add-items is gone with `lesson_items` (§2): an
-    item is a `- [ ]` line in a note. Tab now goes where those are written —
-    the lesson's own note, per §3."""
+def test_a_new_lesson_opens_by_name(page_roadmap, roadmap_app) -> None:
+    """Adding used to end in a Tab that jumped into the new lesson's note.
+    There is no jump any more because there is nowhere to jump *from*: the row
+    appears under the field as you type, and its name opens its page like
+    every other name in the app."""
     page = page_roadmap
-    field = page.get_by_test_id(f"add-lesson-subtopic-{_subtopic_id(roadmap_app)}")
-
+    field = _lesson_field(page, roadmap_app)
     field.click()
     page.keyboard.type("Window functions")
     page.keyboard.press("Enter")
-    page.wait_for_timeout(250)
+    page.wait_for_timeout(400)
 
-    page.keyboard.press("Tab")
-    page.get_by_test_id("note-editor").wait_for(state="visible", timeout=10_000)
+    lesson_id = roadmap_app.query("SELECT id FROM lessons")[0][0]
+    page.get_by_test_id(f"lesson-name-{lesson_id}").click()
+    page.get_by_test_id("page-screen").wait_for(state="visible", timeout=10_000)
     assert page.get_by_test_id("note-title").inner_text() == "Window functions"
 
 
@@ -137,7 +152,7 @@ def test_checklist_items_cannot_be_created_from_the_roadmap(page_roadmap,
     """§2 **[LOCKED]** — "This table has no dedicated CRUD UI." The Roadmap
     points at the note rather than offering an input of its own."""
     page = page_roadmap
-    field = page.get_by_test_id(f"add-lesson-subtopic-{_subtopic_id(roadmap_app)}")
+    field = _lesson_field(page, roadmap_app)
     field.click()
     page.keyboard.type("Window functions")
     page.keyboard.press("Enter")
@@ -157,7 +172,7 @@ def test_there_is_no_create_dialog_anywhere(page_roadmap, roadmap_app) -> None:
     """"This is the entire authoring flow — no separate 'create' dialog, no
     modal.\""""
     page = page_roadmap
-    field = page.get_by_test_id(f"add-lesson-subtopic-{_subtopic_id(roadmap_app)}")
+    field = _lesson_field(page, roadmap_app)
     field.click()
     page.keyboard.type("Inline only")
     page.keyboard.press("Enter")
@@ -175,7 +190,7 @@ def test_ticking_every_item_flips_the_lesson_and_moves_the_bars(page_roadmap,
                                                                  roadmap_app) -> None:
     page = page_roadmap
     sid = _subtopic_id(roadmap_app)
-    field = page.get_by_test_id(f"add-lesson-subtopic-{sid}")
+    field = _lesson_field(page, roadmap_app)
     field.click()
     page.keyboard.type("Window functions")
     page.keyboard.press("Enter")
@@ -223,7 +238,7 @@ def test_progress_bars_carry_no_mastery_vocabulary(page_roadmap,
     finishing a checklist is the same as knowing the material — exactly the
     wrong lesson for an app built around retrieval practice.\""""
     page = page_roadmap
-    field = page.get_by_test_id(f"add-lesson-subtopic-{_subtopic_id(roadmap_app)}")
+    field = _lesson_field(page, roadmap_app)
     field.click()
     page.keyboard.type("Finished lesson")
     page.keyboard.press("Enter")
@@ -240,7 +255,7 @@ def test_a_completed_bar_is_the_accent_not_green(page_roadmap,
     """"Use a plain percentage bar (grey track, single accent fill, no
     traffic-light colour semantics)". Green is reserved for Mastered."""
     page = page_roadmap
-    field = page.get_by_test_id(f"add-lesson-subtopic-{_subtopic_id(roadmap_app)}")
+    field = _lesson_field(page, roadmap_app)
     field.click()
     page.keyboard.type("Done lesson")
     page.keyboard.press("Enter")
@@ -281,7 +296,7 @@ def test_the_roadmap_shows_completed_work(page_roadmap, roadmap_app) -> None:
 def test_todos_combines_standalone_todos_with_open_lessons(page_roadmap,
                                                             roadmap_app) -> None:
     page = page_roadmap
-    field = page.get_by_test_id(f"add-lesson-subtopic-{_subtopic_id(roadmap_app)}")
+    field = _lesson_field(page, roadmap_app)
     field.click()
     page.keyboard.type("An open lesson")
     page.keyboard.press("Enter")

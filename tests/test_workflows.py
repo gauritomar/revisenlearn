@@ -19,7 +19,7 @@ import datetime as dt
 import httpx
 import pytest
 
-from conftest import expand_row, open_lesson, start_app
+from conftest import assert_is_today, expand_row, open_lesson, start_app
 
 TODAY = dt.date.today().isoformat()
 
@@ -66,15 +66,18 @@ def test_workflow_1_ui_window_shows_header_logo_and_title(page) -> None:
     assert logo.evaluate("img => img.complete && img.naturalWidth > 0"), \
         "the header logo did not load"
 
-    # Consolidated addendum §7 — "the app opens on **Calendar**, not
-    # Dashboard. Dashboard stays reachable from the nav as before" — and from
-    # the logo, which is now one button home.
-    page.get_by_test_id("calendar-screen").wait_for(state="visible")
+    # The Roadmap is the way into notes, so the app opens there; the
+    # Dashboard (which now carries the calendar) is one click away on the
+    # logo. Neither Calendar nor Notes has a tab any more.
+    page.get_by_test_id("roadmap").wait_for(state="visible")
     page.get_by_test_id("sidebar-empty").wait_for(state="visible")
     assert page.get_by_test_id("subject-tree").count() == 0
+    assert page.get_by_test_id("nav-calendar").count() == 0
+    assert page.get_by_test_id("nav-notes").count() == 0
 
     page.get_by_test_id("header-home").click()
     page.get_by_test_id("dashboard").wait_for(state="visible")
+    page.get_by_test_id("dash-calendar").wait_for(state="visible")
 
 
 @pytest.mark.ui
@@ -215,7 +218,7 @@ def test_workflow_3_take_a_note_and_it_survives_a_restart(app, client, db_path) 
     note = client.post(
         "/api/notes/ensure", json={"subtopic_id": branch["subtopic"]["id"]}
     ).json()
-    assert note["study_date"] == TODAY
+    assert_is_today(note["study_date"])
     assert note["title"] == "Hybrid search"
     # The note is filed under the whole branch, not just the subtopic.
     assert note["topic_id"] == branch["topic"]["id"]
@@ -262,7 +265,7 @@ def test_workflow_3_take_a_note_and_it_survives_a_restart(app, client, db_path) 
             # The note is still there.
             after = c2.get(f"/api/notes/{note['id']}").json()
             assert [b["text"] for b in after["blocks"]] == bullets
-            assert after["study_date"] == TODAY
+            assert_is_today(after["study_date"])
             assert after["title"] == "Hybrid search"
 
             # And it is still reachable the way the user got to it.
@@ -364,7 +367,7 @@ def test_workflow_3_ui_type_a_note_save_and_reopen(page, app, db_path, browser) 
     # §3 — "A note tied to a Lesson has no name of its own — it opens under
     # the Lesson's name in the breadcrumb/header."
     assert page.get_by_test_id("note-title").inner_text() == "Hybrid retrieval in practice"
-    assert page.get_by_test_id("note-date").get_attribute("datetime") == TODAY
+    assert_is_today(page.get_by_test_id("note-date").get_attribute("datetime"))
 
     # Type some bullet points. "- " turns into a bullet list in Tiptap.
     editor.click()

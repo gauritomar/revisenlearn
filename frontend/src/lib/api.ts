@@ -30,6 +30,28 @@ export type Subject = { id: number; name: string; colour: string | null; sort_or
 
 export type TreeKind = 'subject' | 'topic' | 'subtopic' | 'lesson'
 
+/** Every level of the hierarchy is a page: it has a note, a trail above it and
+ *  the pages inside it. */
+export type PageChild = {
+  kind: TreeKind
+  id: number
+  name: string
+  note_id: number | null
+  block_count: number
+  child_count: number
+}
+export type PageCrumb = { kind: TreeKind; id: number; name: string }
+export type PageDetail = {
+  kind: TreeKind
+  id: number
+  name: string
+  colour: string | null
+  status: string | null
+  note_id: number
+  breadcrumb: PageCrumb[]
+  children: PageChild[]
+}
+
 export type NotePanel = {
   note_id: number
   lesson_id: number | null
@@ -79,6 +101,7 @@ export type Block = {
   /** checklist_item blocks (consolidated addendum §2). */
   checked: boolean
   url: string | null
+  language: string | null
   parent_block_id: number | null
   content_hash: string
   processed_hash: string | null
@@ -464,6 +487,8 @@ export type PendingBlock = {
   block_type: string
   snippet: string
   state: string
+  page_kind: TreeKind | null
+  page_id: number | null
 }
 
 export type SearchHit = {
@@ -527,6 +552,9 @@ export const api = {
       { method: 'POST', body: JSON.stringify(body) },
     ),
 
+  page: (kind: TreeKind, id: number) =>
+    request<PageDetail>(`/api/pages/${kind}/${id}`),
+
   /** §3 — a lesson's one continuous note, created on first visit. */
   ensureLessonNote: (lesson_id: number) =>
     request<Note>('/api/notes/ensure', {
@@ -545,6 +573,9 @@ export const api = {
       body: JSON.stringify({ checked }),
     }),
 
+  deleteTodo: (id: number) =>
+    request<void>(`/api/todos/${id}`, { method: 'DELETE' }),
+
   ensureNote: (subtopic_id: number, study_date?: string) =>
     request<Note>('/api/notes/ensure', {
       method: 'POST',
@@ -561,6 +592,7 @@ export const api = {
     block_type: string
     text: string
     checked?: boolean
+    language?: string | null
     parent_index?: number | null
   }>) =>
     request<Note>(`/api/notes/${id}/blocks`, { method: 'PUT', body: JSON.stringify({ blocks }) }),

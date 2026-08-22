@@ -8,7 +8,7 @@ import type { TodoEntry } from '../lib/api'
 
 /** Spec §14 Dashboard, v1.
  *
- *  Today · Continue learning · Study next · Today's notes · Calendar · Progress.
+ *  Calendar · Today · Continue learning · Study next · Today's notes · Progress.
  *  The review-driven half of "Today" and the Progress charts need review data,
  *  so they fill in at Phase 7 and Phase 9. Explicitly no streaks (spec §14).
  */
@@ -100,6 +100,13 @@ export function Dashboard({ onView }: { onView: (v: string) => void }) {
         </div>
       )}
 
+      {/* The calendar is the first thing on the dashboard: it answers "what
+          have I been doing" before any of the counters do. It used to have a
+          tab of its own; it lives here now. */}
+      <Section title="Calendar" testid="dash-calendar">
+        <Calendar />
+      </Section>
+
       {/* Today */}
       <Section title="Today" testid="dash-today">
         <div className="grid grid-cols-3 gap-3">
@@ -176,10 +183,6 @@ export function Dashboard({ onView }: { onView: (v: string) => void }) {
             ))}
           </ul>
         )}
-      </Section>
-
-      <Section title="Calendar" testid="dash-calendar">
-        <Calendar />
       </Section>
 
       {/* Spec §14 — concepts, reviews, mastery distribution. No streaks. */}

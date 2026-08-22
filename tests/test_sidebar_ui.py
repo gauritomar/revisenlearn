@@ -35,20 +35,30 @@ def _tree(base_url: str) -> dict:
 # --------------------------------------------------------------------------
 
 @pytest.mark.ui
-def test_a_subjects_name_does_not_expand_it(page, app) -> None:
-    """"Clicking the row's **name** does nothing for these three levels
-    (they're organizational, not navigable)."""
+def test_a_subjects_chevron_expands_and_its_name_opens_the_page(page, app) -> None:
+    """§5's distinction, now that every level is a page: "clicking a page's
+    **chevron** expands children inline without navigating; clicking the
+    **name** navigates to open that page."
+
+    The addendum made Subject/Topic/Subtopic names inert because only a Lesson
+    had a note. Every level has one now, so every name navigates.
+    """
     _tree(app.base_url)
     page.reload(wait_until="networkidle")
 
     page.get_by_test_id("subject-GenAI").wait_for(state="visible")
     subject_id = app.query("SELECT id FROM subjects")[0][0]
-    page.get_by_test_id(f"subject-name-{subject_id}").click()
-    assert page.get_by_test_id("topic-Retrieval").count() == 0
 
-    # The chevron does.
+    # The chevron expands without navigating.
     page.get_by_test_id(f"subject-chevron-{subject_id}").click()
     page.get_by_test_id("topic-Retrieval").wait_for(state="visible")
+    assert page.get_by_test_id("page-screen").count() == 0
+
+    # The name opens the page.
+    page.get_by_test_id(f"subject-name-{subject_id}").click()
+    page.get_by_test_id("page-screen").wait_for(state="visible")
+    assert page.get_by_test_id("note-title").inner_text() == "GenAI"
+    assert page.url.endswith(f"#/pages/subject/{subject_id}")
 
 
 @pytest.mark.ui
@@ -61,43 +71,69 @@ def test_a_lessons_name_opens_its_note_as_a_route(page, app) -> None:
     open_lesson(page, "GenAI", "Retrieval", "Hybrid search", LESSON)
 
     assert page.get_by_test_id("note-title").inner_text() == LESSON
-    assert page.url.endswith(f"#/lessons/{tree['lesson']['id']}")
-    # The breadcrumb says where it sits, since the note has no name of its own.
-    assert "Hybrid search" in page.get_by_test_id("note-breadcrumb").inner_text()
+    assert page.url.endswith(f"#/pages/lesson/{tree['lesson']['id']}")
+    # The breadcrumb says where it sits, since the note has no name of its
+    # own — and each crumb is a way back up.
+    trail = page.get_by_test_id("page-breadcrumb").inner_text()
+    assert "Hybrid search" in trail and "GenAI" in trail
+    page.get_by_test_id(f"crumb-subtopic-{tree['subtopic']['id']}").click()
+    page.wait_for_function(
+        "() => document.querySelector('[data-testid=note-title]')"
+        "?.textContent === 'Hybrid search'",
+        timeout=10_000,
+    )
 
-    # Back leaves the note, exactly as a route should.
+    # Back returns to the lesson, exactly as a route should.
     page.go_back()
-    page.get_by_test_id("note-editor").wait_for(state="detached")
+    page.wait_for_function(
+        "() => document.querySelector('[data-testid=note-title]')"
+        f"?.textContent === {LESSON!r}",
+        timeout=10_000,
+    )
+    assert page.url.endswith(f"#/pages/lesson/{tree['lesson']['id']}")
 
 
 @pytest.mark.ui
-def test_a_row_is_deleted_behind_one_confirmation(page, app) -> None:
-    """§5 — "hovering any row … reveals a small trash icon … behind one
-    confirmation step."""
+def test_the_sidebar_has_no_delete(page, app) -> None:
+    """Deleting moved to the Roadmap. The sidebar is what you move through,
+    and a trash icon on a row you are only passing over is an accident waiting
+    to happen."""
+    _tree(app.base_url)
+    page.reload(wait_until="networkidle")
+    page.get_by_test_id("subject-GenAI").wait_for(state="visible")
+
+    assert page.locator('[data-testid^="subject-delete-"]').count() == 0
+    assert page.locator('[data-testid^="lesson-delete-"]').count() == 0
+
+
+@pytest.mark.ui
+def test_the_roadmap_deletes_behind_one_confirmation(page, app) -> None:
+    """One confirmation, and the soft delete cascades to children
+    (principle §1.7 — the rows stay, stamped)."""
     _tree(app.base_url)
     page.reload(wait_until="networkidle")
     subject_id = app.query("SELECT id FROM subjects")[0][0]
 
-    row = page.get_by_test_id("subject-GenAI")
+    page.get_by_test_id("roadmap").wait_for(state="visible")
+    row = page.get_by_test_id(f"roadmap-open-subject-{subject_id}")
     row.wait_for(state="visible")
-    trash = page.get_by_test_id(f"subject-delete-{subject_id}")
+    trash = page.get_by_test_id(f"delete-subject-{subject_id}")
 
     # Hidden until the row is hovered, and never destructive on first click.
     assert trash.evaluate("el => getComputedStyle(el).opacity") == "0"
     row.hover()
     page.wait_for_function(
         f"() => getComputedStyle(document.querySelector("
-        f"'[data-testid=\"subject-delete-{subject_id}\"]')).opacity === '1'"
+        f"'[data-testid=\"delete-subject-{subject_id}\"]')).opacity === '1'"
     )
     trash.click()
     assert app.query("SELECT deleted_at IS NULL FROM subjects")[0][0] == 1
 
-    page.get_by_test_id(f"subject-delete-confirm-{subject_id}").click()
+    page.get_by_test_id(f"delete-confirm-subject-{subject_id}").click()
     page.wait_for_function(
-        "() => !document.querySelector('[data-testid=\"subject-GenAI\"]')"
+        f"() => !document.querySelector('[data-testid=\"roadmap-open-subject-{subject_id}\"]')"
     )
     assert app.query("SELECT deleted_at IS NOT NULL FROM subjects")[0][0] == 1
-    # "deletes that item and its children" — soft, per principle §1.7.
     assert app.query("SELECT deleted_at IS NOT NULL FROM topics")[0][0] == 1
     assert app.query("SELECT deleted_at IS NOT NULL FROM subtopics")[0][0] == 1
 

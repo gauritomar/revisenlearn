@@ -1190,6 +1190,7 @@ dependencies = [
     { name = "fastapi" },
     { name = "fastembed" },
     { name = "fsrs" },
+    { name = "google-genai" },
     { name = "httpx" },
     { name = "keyring" },
     { name = "numpy" },
@@ -1198,14 +1199,6 @@ dependencies = [
     { name = "pyyaml" },
     { name = "sqlmodel" },
     { name = "uvicorn", extra = ["standard"] },
-]
-
-[package.optional-dependencies]
-fsrs = [
-    { name = "fsrs" },
-]
-llm = [
-    { name = "google-genai" },
 ]
 
 [package.dev-dependencies]
@@ -1222,8 +1215,7 @@ requires-dist = [
     { name = "fastapi", specifier = ">=0.115" },
     { name = "fastembed", specifier = ">=0.4" },
     { name = "fsrs", specifier = ">=5.0" },
-    { name = "fsrs", marker = "extra == 'fsrs'", specifier = ">=5.0" },
-    { name = "google-genai", marker = "extra == 'llm'", specifier = ">=2.0.0" },
+    { name = "google-genai", specifier = ">=2.0.0" },
     { name = "httpx", specifier = ">=0.27" },
     { name = "keyring", specifier = ">=25.4" },
     { name = "numpy", specifier = ">=1.26" },
@@ -1233,7 +1225,6 @@ requires-dist = [
     { name = "sqlmodel", specifier = ">=0.0.22" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.32" },
 ]
-provides-extras = ["llm", "fsrs"]
 
 [package.metadata.requires-dev]
 dev = [
