@@ -166,11 +166,10 @@ def delete_lesson(lesson_id: int, session: Session = Depends(get_session)) -> No
     lesson = session.get(Lesson, lesson_id)
     if lesson is None or lesson.deleted_at is not None:
         raise HTTPException(404, "Lesson not found")
-    now = _now()
-    lesson.deleted_at = now
-    for item in service.live_items(session, lesson_id):
-        item.deleted_at = now
-        session.add(item)
+    # Only the lesson. Its checklist rows are a projection of note blocks
+    # (§2) and the note outlives the lesson, so there is nothing of its own
+    # here to delete — and `checklist_items` has no `deleted_at` to set.
+    lesson.deleted_at = _now()
 
 
 # --------------------------------------------------------------------------

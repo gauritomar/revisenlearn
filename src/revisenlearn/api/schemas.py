@@ -44,11 +44,31 @@ class SubtopicUpdate(BaseModel):
     sort_order: Optional[int] = None
 
 
+class LessonBrief(BaseModel):
+    """A lesson as the sidebar needs it (consolidated addendum §5).
+
+    The counts are what decide whether the row gets a chevron at all —
+    "Lessons also have a chevron if they have checklist items worth
+    previewing" — so they travel with the tree rather than costing a
+    request per lesson.
+    """
+
+    id: int
+    topic_id: int
+    subtopic_id: Optional[int] = None
+    name: str
+    status: str
+    position: int
+    checklist_total: int = 0
+    checklist_done: int = 0
+
+
 class SubtopicOut(BaseModel):
     id: int
     topic_id: int
     name: str
     sort_order: int
+    lessons: list[LessonBrief] = []
 
 
 class TopicOut(BaseModel):
@@ -57,6 +77,8 @@ class TopicOut(BaseModel):
     name: str
     sort_order: int
     subtopics: list[SubtopicOut] = []
+    #: Lessons hanging straight off the topic, with no subtopic.
+    lessons: list[LessonBrief] = []
 
 
 class SubjectOut(BaseModel):

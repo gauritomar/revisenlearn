@@ -360,3 +360,135 @@ def test_the_model_assignment_is_shown_but_not_editable(client) -> None:
     assert body["source"] == "config/providers.yaml"
     assert body["tasks"]
     assert "key" not in str(body).lower() or "api_key" not in body
+
+
+# --------------------------------------------------------------------------
+# §5 — what the sidebar needs from the backend
+# --------------------------------------------------------------------------
+
+def test_the_tree_carries_lessons_and_their_checklist_counts(client) -> None:
+    """"Lessons also have a chevron if they have checklist items worth
+    previewing" — so the counts ride along with the tree rather than costing a
+    request per lesson."""
+    tree = _tree(client)
+    note = client.post("/api/notes/ensure",
+                       json={"lesson_id": tree["lesson"]["id"]}).json()
+    _write(client, note["id"], ["- [x] Done one", "- [ ] Still open"])
+
+    subtopic = client.get("/api/subjects").json()[0]["topics"][0]["subtopics"][0]
+    lesson = subtopic["lessons"][0]
+    assert lesson["name"] == "Fixed vs semantic chunking"
+    assert (lesson["checklist_total"], lesson["checklist_done"]) == (2, 1)
+
+
+def test_a_lesson_on_a_topic_with_no_subtopic_still_appears(client) -> None:
+    tree = _tree(client)
+    client.post("/api/lessons", json={"topic_id": tree["topic"]["id"],
+                                      "name": "Loose lesson"})
+
+    topic = client.get("/api/subjects").json()[0]["topics"][0]
+    assert [l["name"] for l in topic["lessons"]] == ["Loose lesson"]
+    # …and it is not double-counted under a subtopic.
+    assert [l["name"] for l in topic["subtopics"][0]["lessons"]] == [
+        "Fixed vs semantic chunking"]
+
+
+def test_reordering_renumbers_the_siblings_densely(client) -> None:
+    """Drag-and-drop writes `position`. Renumbering the whole run on each move
+    keeps the order stable whatever the rows looked like before."""
+    tree = _tree(client)
+    names = ["A", "B", "C"]
+    ids = [client.post("/api/lessons",
+                       json={"topic_id": tree["topic"]["id"],
+                             "subtopic_id": tree["subtopic"]["id"],
+                             "name": n}).json()["id"] for n in names]
+
+    body = client.post("/api/tree/move", json={
+        "kind": "lesson", "id": ids[2],
+        "parent_id": tree["topic"]["id"],
+        "subtopic_id": tree["subtopic"]["id"], "position": 0,
+    }).json()
+    assert body["position"] == 0
+
+    lessons = client.get("/api/subjects").json()[0]["topics"][0]["subtopics"][0]["lessons"]
+    assert [l["name"] for l in lessons] == ["C", "Fixed vs semantic chunking", "A", "B"]
+    assert [l["position"] for l in lessons] == [0, 1, 2, 3]
+
+
+def test_a_lesson_can_be_moved_to_another_subtopic(client) -> None:
+    """The "Move to…" picker: reparenting is the same operation as a drag."""
+    tree = _tree(client)
+    other = client.post("/api/subtopics",
+                        json={"topic_id": tree["topic"]["id"],
+                              "name": "Embeddings"}).json()
+
+    client.post("/api/tree/move", json={
+        "kind": "lesson", "id": tree["lesson"]["id"],
+        "parent_id": tree["topic"]["id"], "subtopic_id": other["id"],
+        "position": 0,
+    })
+
+    topic = client.get("/api/subjects").json()[0]["topics"][0]
+    by_name = {st["name"]: st["lessons"] for st in topic["subtopics"]}
+    assert [l["name"] for l in by_name["Embeddings"]] == ["Fixed vs semantic chunking"]
+    assert by_name["Chunking"] == []
+
+
+def test_a_lesson_cannot_straddle_two_topics(client) -> None:
+    """A subtopic decides its lesson's topic, so a mismatched pair is a bad
+    request rather than a silently corrected one."""
+    tree = _tree(client)
+    elsewhere = client.post("/api/topics",
+                            json={"subject_id": tree["subject"]["id"],
+                                  "name": "Evaluation"}).json()
+    stray = client.post("/api/subtopics",
+                        json={"topic_id": elsewhere["id"],
+                              "name": "Offline eval"}).json()
+
+    response = client.post("/api/tree/move", json={
+        "kind": "lesson", "id": tree["lesson"]["id"],
+        "parent_id": tree["topic"]["id"], "subtopic_id": stray["id"],
+        "position": 0,
+    })
+    assert response.status_code == 400
+
+
+def test_subjects_topics_and_subtopics_reorder_too(client) -> None:
+    first = client.post("/api/subjects", json={"name": "Alpha"}).json()
+    second = client.post("/api/subjects", json={"name": "Beta"}).json()
+
+    client.post("/api/tree/move",
+                json={"kind": "subject", "id": second["id"], "position": 0})
+    assert [s["name"] for s in client.get("/api/subjects").json()] == ["Beta", "Alpha"]
+
+    topic = client.post("/api/topics", json={"subject_id": first["id"],
+                                             "name": "Moved"}).json()
+    client.post("/api/tree/move", json={"kind": "topic", "id": topic["id"],
+                                        "parent_id": second["id"], "position": 0})
+    tree = {s["name"]: s for s in client.get("/api/subjects").json()}
+    assert [t["name"] for t in tree["Beta"]["topics"]] == ["Moved"]
+    assert tree["Alpha"]["topics"] == []
+
+
+def test_a_position_past_the_end_lands_last(client) -> None:
+    for name in ("One", "Two"):
+        client.post("/api/subjects", json={"name": name})
+    first = client.get("/api/subjects").json()[0]
+
+    client.post("/api/tree/move",
+                json={"kind": "subject", "id": first["id"], "position": 99})
+    assert [s["name"] for s in client.get("/api/subjects").json()] == ["Two", "One"]
+
+
+def test_deleting_a_lesson_leaves_its_note_alone(client) -> None:
+    """Principle §1.7 — nothing is hard-deleted, and a lesson's note is the
+    user's writing, not the lesson's property."""
+    tree = _tree(client)
+    note = client.post("/api/notes/ensure",
+                       json={"lesson_id": tree["lesson"]["id"]}).json()
+    _write(client, note["id"], ["- [ ] Something I wrote"])
+
+    assert client.delete(f"/api/lessons/{tree['lesson']['id']}").status_code == 204
+
+    assert client.get(f"/api/notes/{note['id']}").status_code == 200
+    assert client.get("/api/subjects").json()[0]["topics"][0]["subtopics"][0]["lessons"] == []
