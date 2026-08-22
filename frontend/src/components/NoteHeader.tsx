@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
 import { api, type Note } from '../lib/api'
 import { useUI } from '../store/ui'
+import { ProcessNotes } from './ProcessNotes'
 
 /** The Notes screen header (spec §14): the note's title and date, the §4.2
  *  block counter, the save dot, and a **Process notes** button showing the
@@ -77,24 +78,8 @@ export function NoteHeader({ note, saveState }: {
       </div>
 
       <div className="mt-2.5 flex flex-wrap items-center gap-2">
-        {/* Spec §14 — Process notes, showing the unprocessed count. The
-            pipeline itself is Phase 5, so the button is present and honest
-            rather than absent or fake. */}
-        <button
-          type="button"
-          disabled
-          title="The pipeline arrives in Phase 5"
-          data-testid="process-notes"
-          data-pending={pending}
-          className="flex cursor-not-allowed items-center gap-1.5 rounded-md border border-line bg-paper px-2.5 py-1 text-[0.75rem] text-faint"
-        >
-          Process notes
-          {pending > 0 && (
-            <span className="rounded bg-sunken px-1.5 py-0.5 text-[0.6875rem] tabular-nums text-muted">
-              {pending}
-            </span>
-          )}
-        </button>
+        {/* Spec §14 — Process notes, showing the unprocessed count. */}
+        <ProcessNotes pendingHint={pending} />
 
         {note.resource_id === null && note.subtopic_id !== null && (
           <>

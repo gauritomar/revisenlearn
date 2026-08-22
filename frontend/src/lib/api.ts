@@ -76,6 +76,52 @@ export type BackupList = {
 export type BackupRun = { created: BackupEntry; pruned: string[] }
 export type ExportResult = { path: string; note_count: number; file_count: number }
 
+export type PipelineJob = {
+  id: number
+  name: string
+  status: 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled'
+  stage: string | null
+  subject_id: number | null
+  block_count: number
+  concepts_created: number
+  concepts_updated: number
+  concepts_merged: number
+  edges_proposed: number
+  mcqs_generated: number
+  error_text: string | null
+  retry_count: number
+  created_at: string
+  started_at: string | null
+  finished_at: string | null
+}
+export type LLMRunRow = {
+  id: number
+  task: string
+  model: string
+  prompt_version: string | null
+  request_mode: string
+  input_tokens: number
+  output_tokens: number
+  cached_tokens: number
+  estimated_cost_usd: number | null
+  success: boolean
+  error_text: string | null
+  created_at: string
+}
+export type JobDetail = {
+  job: PipelineJob
+  stats: {
+    llm_calls: number
+    input_tokens: number
+    output_tokens: number
+    cached_tokens: number
+    estimated_cost_usd: number
+    unpriced_calls: number
+    failed_calls: number
+  }
+  runs: LLMRunRow[]
+}
+
 export type SearchHit = {
   kind: 'note_block' | 'concept'
   note_id: number | null
@@ -179,6 +225,20 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(destination ? { destination } : {}),
     }),
+
+  pending: (subjectId?: number) =>
+    request<{ unprocessed_blocks: number; subject_id: number | null }>(
+      `/api/pipeline/pending${subjectId ? `?subject_id=${subjectId}` : ''}`,
+    ),
+  runPipeline: (subject_id?: number | null) =>
+    request<PipelineJob>('/api/pipeline/run', {
+      method: 'POST',
+      body: JSON.stringify({ subject_id: subject_id ?? null }),
+    }),
+  jobs: () => request<PipelineJob[]>('/api/pipeline/jobs'),
+  job: (id: number) => request<JobDetail>(`/api/pipeline/jobs/${id}`),
+  retryJob: (id: number) =>
+    request<PipelineJob>(`/api/pipeline/jobs/${id}/retry`, { method: 'POST' }),
 
   search: (q: string) =>
     request<{ query: string; hits: SearchHit[] }>(`/api/search?q=${encodeURIComponent(q)}`),

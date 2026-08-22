@@ -21,6 +21,7 @@ from .backup import run_nightly_if_due
 from .credentials import log_key_status_on_startup
 from .db import session_scope
 from .migrate import upgrade_to_head
+from .pipeline.worker import start_worker, stop_worker
 from .seed import seed_all
 
 log = logging.getLogger(__name__)
@@ -48,8 +49,13 @@ async def lifespan(app: FastAPI):
     taken = run_nightly_if_due()
     if taken is not None:
         log.info("Nightly backup taken: %s", taken.name)
+    # Spec §8.2 — a daemon thread, not BackgroundTasks, so a queued job
+    # survives a restart instead of dying with the request that made it.
+    start_worker()
+
     log.info("Revise & Learn ready on http://%s:%s", config.HOST, config.port())
     yield
+    stop_worker()
 
 
 def create_app() -> FastAPI:

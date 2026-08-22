@@ -64,6 +64,9 @@ export function NoteEditor({ noteId }: { noteId: number }) {
       const payload = reconcile(serialised, current.blocks)
       const updated = await api.saveBlocks(current.id, payload)
       qc.setQueryData(['note', current.id], updated)
+      // A save changes what the pipeline owes, so the Process notes count is
+      // now stale (spec §14: the button carries that count).
+      void qc.invalidateQueries({ queryKey: ['pipeline-pending'] })
       setSaveState('saved')
     } catch {
       // Principle §1.2 — never lose what was typed. The document stays in the

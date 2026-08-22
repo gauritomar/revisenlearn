@@ -6,6 +6,7 @@ from . import (
     hierarchy,
     meta,
     notes,
+    pipeline,
     resources,
     search,
     settings,
@@ -17,6 +18,7 @@ api_router.include_router(hierarchy.router, tags=["hierarchy"])
 api_router.include_router(notes.router, tags=["notes"])
 api_router.include_router(resources.router, tags=["resources"])
 api_router.include_router(concepts.router, tags=["concepts"])
+api_router.include_router(pipeline.router, tags=["pipeline"])
 api_router.include_router(search.router, tags=["search"])
 api_router.include_router(backup.router, tags=["backup"])
 api_router.include_router(settings.router, tags=["settings"])

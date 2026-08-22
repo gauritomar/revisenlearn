@@ -113,6 +113,8 @@ def test_process_notes_button_shows_the_unprocessed_count(page, app) -> None:
 
     button = page.get_by_test_id("process-notes")
     assert button.is_visible()
+    # Disabled only because there is nothing pending yet, not because the
+    # pipeline is missing.
     assert button.is_disabled()
     assert button.get_attribute("data-pending") == "0"
 
