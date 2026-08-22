@@ -118,11 +118,15 @@ prompt's Workflows 2, 3 and 4 — creating a subject tree, taking a note that
 survives a restart, and searching for it — cannot pass without them.
 
 **Resolution.** All of Phase 1 was built, plus the narrow slice of Phase 2 those
-tests require. Explicitly **not** built: resources and the fast-add flow,
-resource↔note split view, calendar month view, dashboard v1, and the §4.2
-indicators in the editor UI. Phase 2 is therefore *partially* complete and is
-being finished next; §18's "each phase must be usable on its own" still holds,
-because Phase 1's own acceptance criteria are independently met.
+tests require, and Phase 2 was then finished immediately afterwards rather than
+left half-done — §18 requires each phase to be usable on its own, and a phase
+that exists only as the parts another phase's tests happened to need is not
+that.
+
+Phase 2 is now complete: resources with the fast-add flow, the resource↔note
+split view, the calendar month view, dashboard v1, the Notes screen with its
+Process-notes count, note renaming and additional notes per day, and the §4.2
+indicators drawn in the editor.
 
 ---
 
@@ -232,3 +236,91 @@ introductory rates lapse (§21.6).
   carries both hit kinds.
 - **`⌘S` is bound to `Ctrl/Cmd+S`** and tested with `Control+s`, because
   headless Chromium does not deliver `Meta` chords reliably.
+
+---
+
+## 6. Phase 2 decisions
+
+### Resource type is inferred from the URL
+
+§5.1 gives a five-second budget for adding a resource, and §5 lists nine
+resource types. Making the user choose one spends most of that budget on the
+least interesting decision, so the type is inferred from the URL (YouTube,
+arXiv, `.pdf`, LeetCode, Coursera, …) and can still be overridden. Inference is
+a fallback, never an override: an explicit `resource_type` always wins.
+
+### The title probe is a separate endpoint, not part of the create
+
+§5.1 says to "attempt to fetch the page `<title>` for the title field". Doing it
+inside `POST /api/resources` would put a network call on the save path, which
+principle §1.2 forbids for notes and which the five-second budget forbids here.
+`POST /api/resources/probe-title` prefills the field instead, runs in the
+background behind a sequence guard so a slow response cannot overwrite a newer
+one, and the save never waits for it. Every failure — bad scheme, non-HTML,
+4xx/5xx, timeout, no `<title>` — returns a null title and a 200, and the client
+falls back to the raw URL.
+
+It reads at most 64KB and stops at `</title>`. `RNL_NO_BROWSER=1` suppresses the
+OS opener so the test-suite can exercise `/open` without hijacking the screen.
+
+### Last-used placement lives on the server
+
+§5.1 wants the subject/topic pickers to "default to the last-used values". That
+state is stored in `settings.last_used_placement` rather than in browser
+storage, so it survives a reinstall and is the same in every window.
+
+### Study-next ranking **[JUDGEMENT]**
+
+§14 asks for a "ranked to-do" but §10.4's priority formula governs *review
+items*, not resources. The order is: `in_progress`, then `next`, then `inbox`;
+within each, higher priority first, then least-recently-touched. So a
+half-finished video outranks a fresh link, and nothing sits at the bottom
+forever. Completed and archived work is excluded.
+
+### A resource note and a subtopic note are distinct on the same day
+
+§4.1 gives one note per (Subtopic, day); §5.1 gives a resource "the note for
+that resource + today's date". Opening a subtopic and opening a resource filed
+under that same subtopic on the same day must therefore not collide.
+`POST /api/notes/ensure` keys on `resource_id` when given one, and on
+`(subtopic, day)` with `resource_id IS NULL` otherwise. A resource note is
+titled after its resource and inherits its placement in the hierarchy.
+
+### Calendar returns only non-empty days
+
+`GET /api/notes/calendar/{YYYY-MM}` returns the days that actually have notes;
+the 42-cell grid is drawn client-side. Sending 31 mostly-empty objects to
+render a month would be the wrong split. The month-end boundary is computed
+rather than assumed so December rolls into January instead of asking for month
+13 — there is a test for exactly that.
+
+Two topic pills are shown per day with an overflow count, which is what fits
+legibly in a seventh of 500px (§14.1).
+
+### Indicator matching is by normalised text, not by hash
+
+The §4.2 decoration plugin has to answer "which stored block is this editor
+node?" for every node on every keystroke. `content_hash` is SHA-256 and
+`crypto.subtle.digest` is async, which a synchronous ProseMirror decoration
+function cannot await. Normalised text is the same key by a different name.
+Duplicate lines are genuinely ambiguous, so they are consumed in document order:
+N identical stored blocks light up the first N identical editor nodes.
+
+### Process notes counts new *and* edited blocks
+
+§4.2 makes a processed-then-edited block "stale" — the concepts derived from it
+no longer reflect what it says. That is work the pipeline still owes, so the
+button's count is `new + edited`, not just `new`. The button is disabled with a
+"Phase 5" tooltip rather than hidden, so the Notes screen shows its real shape.
+
+### Two bugs worth recording
+
+Both were caught by the browser tests rather than by reading the code:
+
+- **The editor hydrated on `noteId` alone.** Opening a note whose data was not
+  already in the query cache — from the dashboard rather than the sidebar, which
+  pre-seeds it — left an empty editor over a non-empty note, and a subsequent
+  save would have written that emptiness back. It now hydrates once per note,
+  whenever the data actually arrives.
+- **Header tabs did not clear the open surface**, so clicking "Dashboard" while
+  a note was open appeared to do nothing.

@@ -304,3 +304,42 @@ def test_dashboard_todays_notes_lists_what_was_written(page, app) -> None:
     page.get_by_test_id(f"todays-note-{note['id']}").click()
     page.get_by_test_id("note-editor").wait_for(state="visible")
     assert "Something learned" in page.get_by_test_id("note-editor").inner_text()
+
+
+def test_right_sidebar_shows_the_current_resource(page, app) -> None:
+    """Spec §14 — the right sidebar in Notes shows the current resource."""
+    with httpx.Client(base_url=app.base_url, timeout=30) as c:
+        resource = c.post(
+            "/api/resources",
+            json={"title": "Dense retrieval lecture", "status": "in_progress"},
+        ).json()
+        c.patch(
+            f"/api/resources/{resource['id']}",
+            json={"progress_pct": 60, "progress_note": "stopped at 22:15"},
+        )
+
+    page.reload(wait_until="networkidle")
+    page.get_by_test_id(f"resource-{resource['id']}").first.click()
+    page.get_by_test_id("resource-split").wait_for(state="visible")
+
+    panel = page.get_by_test_id("sidebar-resource")
+    panel.wait_for(state="visible", timeout=10_000)
+    text = panel.inner_text()
+    assert "Dense retrieval lecture" in text
+    assert "60%" in text
+    assert "stopped at 22:15" in text
+
+
+def test_right_sidebar_says_unlinked_for_a_subtopic_note(page, app) -> None:
+    branch = _branch(app.base_url)
+    page.reload(wait_until="networkidle")
+
+    page.get_by_test_id("subject-GenAI").click()
+    page.get_by_test_id("topic-Retrieval").click()
+    page.get_by_test_id("subtopic-Hybrid search").click()
+    page.get_by_test_id("note-editor").wait_for(state="visible")
+
+    sidebar = page.get_by_test_id("right-sidebar")
+    assert "Not linked to a resource." in sidebar.inner_text()
+    assert page.get_by_test_id("sidebar-resource").count() == 0
+    assert branch["subtopic"]["name"] == "Hybrid search"

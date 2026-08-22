@@ -4,7 +4,7 @@ A local-first study app. You write notes; the app turns them into durable
 concepts, then schedules them for review. Single user, single machine, no cloud,
 no auth, no Docker.
 
-**Status: Phase 1 (Foundation) complete.** See [Build status](#build-status).
+**Status: Phases 1 and 2 complete.** See [Build status](#build-status).
 
 ---
 
@@ -63,8 +63,8 @@ back it up and you have backed up everything.
 
 ## API key setup
 
-No model is called anywhere in Phase 1. The key is resolved and its *presence*
-reported, nothing more.
+No model is called anywhere yet — the first LLM call arrives in Phase 5. The
+key is resolved and its *presence* reported, nothing more.
 
 The key is read from, in order:
 
@@ -94,8 +94,14 @@ logged — startup logs only `present`/`absent` and which source it came from.
    typing, plus on blur, plus every 30 seconds; `⌘S` forces it.
 4. `⌘K` searches everything you have written.
 
-From Phase 5, a **Process notes** button turns what you wrote into concepts, and
-Phases 6–7 add the two review loops.
+Or start from a resource, which is the faster daily entry point: **Add
+resource**, paste a link, press Enter. Click it to get a split view — the
+resource, its status and progress slider on the left, today's note for it on
+the right. The dashboard's **Study next** ranks what to pick up, and the
+calendar shows what you wrote on any day.
+
+From Phase 5, the **Process notes** button turns what you wrote into concepts,
+and Phases 6–7 add the two review loops.
 
 ### Keyboard
 
@@ -116,7 +122,7 @@ question) arrive with the review loops in Phases 6 and 7.
 uv sync                      # Python deps
 cd frontend && npm install   # frontend deps
 
-uv run pytest                # all 36 tests
+uv run pytest                # all 111 tests
 uv run pytest -m "not ui"    # API + database only, no browser needed
 uv run pytest -m ui          # browser tests (needs: uv run playwright install chromium)
 
@@ -136,7 +142,7 @@ uv sync --extra fsrs         # fsrs, Phase 7
 
 ```
 src/revisenlearn/     FastAPI app, SQLModel schema, credentials, desktop window
-  api/                routers: meta, hierarchy, notes, search, settings
+  api/                routers: meta, hierarchy, notes, resources, search, settings
 migrations/           Alembic; the full §6 schema plus the FTS5 tables
 frontend/src/         React 18 + TypeScript + Vite + Tailwind, light mode only
 tests/                end-to-end workflow tests (real server, real DB, real browser)
@@ -156,7 +162,7 @@ begins.
 | Phase | | |
 |---|---|---|
 | 1 | Foundation | **done** |
-| 2 | Notes and resources | partial — notes, hierarchy, FTS5 and `⌘K` are in; resources, calendar and dashboard v1 are not |
+| 2 | Notes and resources | **done** |
 | 3 | Backup and export | not started |
 | 4 | Embeddings and identity | not started |
 | 5 | LLM abstraction and pipeline | not started |
@@ -166,8 +172,9 @@ begins.
 | 9 | Mastery, usage, polish | not started |
 | 10 | Interview mode | not started |
 
-Phase 2 is partially complete because the Phase 1 acceptance tests exercise
-note-taking and search. See `DECISIONS.md`.
+Phase 2 is done when "the user can do a full day of studying — add a resource,
+take notes, come back tomorrow and find them" (spec §18). That path is covered
+end to end by the test-suite.
 
 ---
 
