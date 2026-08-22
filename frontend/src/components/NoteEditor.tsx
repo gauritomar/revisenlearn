@@ -71,15 +71,23 @@ export function NoteEditor({ noteId }: { noteId: number }) {
     }
   }, [editor, qc])
 
-  // Load the stored note into the editor when it arrives or the note changes.
+  // Load the stored note into the editor once it has actually arrived.
+  //
+  // Keying this on `noteId` alone was a bug: when the note is not already in
+  // the query cache (opening one from the dashboard rather than the sidebar),
+  // the first run sees `note === undefined` and bails, and nothing re-runs it
+  // when the data lands — leaving an empty editor over a non-empty note.
+  // Keying on `note` and guarding with a ref hydrates exactly once per note,
+  // whenever it arrives, without re-hydrating on every refetch and fighting
+  // the user's cursor.
+  const hydratedRef = useRef<number | null>(null)
   useEffect(() => {
     if (!editor || !note) return
+    if (hydratedRef.current === note.id) return
     editor.commands.setContent(blocksToDoc(note.blocks), false)
+    hydratedRef.current = note.id
     setSaveState('clean')
-    // Re-hydrating on every `note` object identity change would fight the
-    // user's cursor; key on the id and the server's updated_at instead.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [editor, noteId])
+  }, [editor, note])
 
   // A save returns fresh block states, but the document itself has not
   // changed, so ProseMirror has no reason to recompute decorations. Nudge it.

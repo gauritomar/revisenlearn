@@ -29,6 +29,35 @@ export type Note = {
   counts: { processed: number; new: number; edited: number }
 }
 
+
+export type ResourceStatus = 'inbox' | 'next' | 'in_progress' | 'completed' | 'archived'
+
+export type Resource = {
+  id: number
+  title: string
+  url: string | null
+  resource_type: string
+  description: string | null
+  status: ResourceStatus
+  priority: number
+  subject_id: number | null
+  topic_id: number | null
+  subtopic_id: number | null
+  progress_pct: number
+  progress_note: string | null
+  created_at: string
+  last_opened_at: string | null
+  completed_at: string | null
+}
+
+export type TitleProbe = { title: string | null; resource_type: string }
+
+export type Placement = {
+  subject_id?: number | null
+  topic_id?: number | null
+  subtopic_id?: number | null
+}
+
 export type SearchHit = {
   kind: 'note_block' | 'concept'
   note_id: number | null
@@ -79,6 +108,45 @@ export const api = {
   note: (id: number) => request<Note>(`/api/notes/${id}`),
   saveBlocks: (id: number, blocks: Array<{ id?: number | null; position: number; block_type: string; text: string }>) =>
     request<Note>(`/api/notes/${id}/blocks`, { method: 'PUT', body: JSON.stringify({ blocks }) }),
+
+  resources: (params: Record<string, string | number> = {}) => {
+    const qs = new URLSearchParams(
+      Object.entries(params).map(([k, v]) => [k, String(v)]),
+    ).toString()
+    return request<Resource[]>(`/api/resources${qs ? `?${qs}` : ''}`)
+  },
+  resource: (id: number) => request<Resource>(`/api/resources/${id}`),
+  studyNext: (limit = 5) => request<Resource[]>(`/api/resources/study-next?limit=${limit}`),
+  lastUsed: () => request<Placement>('/api/resources/last-used'),
+  probeTitle: (url: string) =>
+    request<TitleProbe>('/api/resources/probe-title', {
+      method: 'POST',
+      body: JSON.stringify({ url }),
+    }),
+  createResource: (body: Record<string, unknown>) =>
+    request<Resource>('/api/resources', { method: 'POST', body: JSON.stringify(body) }),
+  updateResource: (id: number, body: Record<string, unknown>) =>
+    request<Resource>(`/api/resources/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(body),
+    }),
+  deleteResource: (id: number) =>
+    request<void>(`/api/resources/${id}`, { method: 'DELETE' }),
+  openResource: (id: number) =>
+    request<Resource>(`/api/resources/${id}/open`, { method: 'POST' }),
+
+  ensureResourceNote: (resource_id: number, study_date?: string) =>
+    request<Note>('/api/notes/ensure', {
+      method: 'POST',
+      body: JSON.stringify({ resource_id, study_date }),
+    }),
+  notesByDate: (date: string) => request<Note[]>(`/api/notes/by-date/${date}`),
+  notes: (params: Record<string, string | number> = {}) => {
+    const qs = new URLSearchParams(
+      Object.entries(params).map(([k, v]) => [k, String(v)]),
+    ).toString()
+    return request<Note[]>(`/api/notes${qs ? `?${qs}` : ''}`)
+  },
 
   search: (q: string) =>
     request<{ query: string; hits: SearchHit[] }>(`/api/search?q=${encodeURIComponent(q)}`),

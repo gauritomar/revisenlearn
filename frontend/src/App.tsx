@@ -10,6 +10,9 @@ import { Dashboard } from './components/Dashboard'
 import { NoteEditor } from './components/NoteEditor'
 import { CommandPalette } from './components/CommandPalette'
 import { AddDialog } from './components/AddDialog'
+import { ResourceQuickAdd } from './components/ResourceQuickAdd'
+import { ResourceList } from './components/ResourceList'
+import { ResourceSplitView } from './components/ResourceSplitView'
 
 /** Spec §14.1 [LOCKED] — both sidebars auto-collapse below 900px. */
 const COLLAPSE_BELOW = 900
@@ -21,8 +24,11 @@ export function App() {
   const leftCollapsed = useUI((s) => s.leftCollapsed)
   const rightCollapsed = useUI((s) => s.rightCollapsed)
   const activeNoteId = useUI((s) => s.activeNoteId)
+  const activeResourceId = useUI((s) => s.activeResourceId)
   const setPalette = useUI((s) => s.setPalette)
   const setAddDialog = useUI((s) => s.setAddDialog)
+  const setResourceAdd = useUI((s) => s.setResourceAdd)
+  const clearActive = useUI((s) => s.clearActive)
 
   const [narrow, setNarrow] = useState(
     () => typeof window !== 'undefined' && window.innerWidth < COLLAPSE_BELOW,
@@ -46,26 +52,39 @@ export function App() {
       if (e.key === 'Escape') {
         setPalette(false)
         setAddDialog(false)
+        setResourceAdd(false)
       }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [setPalette, setAddDialog])
+  }, [setPalette, setAddDialog, setResourceAdd])
 
   // Below 900px the sidebars overlay the content rather than squeezing it, so
   // the editor stays the dominant element and the page never scrolls sideways.
   const showLeft = !leftCollapsed && !narrow
   const showRight = !rightCollapsed && !narrow
 
+  // Choosing a tab closes whatever note or resource is open — otherwise the
+  // open surface keeps winning and the tab appears to do nothing.
+  const goToView = (next: string) => {
+    clearActive()
+    setView(next)
+  }
+
   return (
     <div className="flex h-full flex-col overflow-hidden">
-      <Header meta={meta} view={view} onView={setView} />
+      <Header meta={meta} view={view} onView={goToView} />
 
       <div className="flex min-h-0 flex-1">
         {showLeft && <LeftSidebar />}
 
         <main className="min-w-0 flex-1 overflow-y-auto" data-testid="main-content">
-          {activeNoteId !== null ? <NoteEditor noteId={activeNoteId} /> : <Dashboard />}
+          <MainContent
+            view={view}
+            onView={goToView}
+            activeNoteId={activeNoteId}
+            activeResourceId={activeResourceId}
+          />
         </main>
 
         {showRight && <RightSidebar meta={meta} />}
@@ -79,6 +98,41 @@ export function App() {
 
       <CommandPalette />
       <AddDialog />
+      <ResourceQuickAdd />
+    </div>
+  )
+}
+
+function MainContent({ view, onView, activeNoteId, activeResourceId }: {
+  view: string
+  onView: (v: string) => void
+  activeNoteId: number | null
+  activeResourceId: number | null
+}) {
+  // An open surface wins over the current tab — the user clicked into it.
+  if (activeResourceId !== null) return <ResourceSplitView resourceId={activeResourceId} />
+  if (activeNoteId !== null) return <NoteEditor noteId={activeNoteId} />
+  if (view === 'Resources') return <ResourceList />
+  if (view === 'Notes') return <NotesEmpty />
+  return <Dashboard onView={onView} />
+}
+
+function NotesEmpty() {
+  const setAddDialog = useUI((s) => s.setAddDialog)
+  return (
+    <div className="mx-auto w-full max-w-3xl px-4 py-6 sm:px-6" data-testid="notes-empty">
+      <h2 className="text-xl font-semibold tracking-tight text-ink">Notes</h2>
+      <p className="mt-1 text-[0.875rem] leading-relaxed text-muted">
+        Pick a subtopic in the sidebar to open today&rsquo;s note, or open a
+        resource to write against it.
+      </p>
+      <button
+        type="button"
+        onClick={() => setAddDialog(true)}
+        className="mt-4 rounded-md border border-line bg-surface px-3 py-1.5 text-[0.8125rem] text-ink transition hover:border-accent hover:text-accent-deep"
+      >
+        Add a subject
+      </button>
     </div>
   )
 }
