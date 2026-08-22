@@ -8,6 +8,7 @@ import type { AppMeta } from '../lib/api'
 // Screens that do not exist until a later phase are rendered but disabled, so
 // the shell shows the real shape of the app rather than a fake one.
 const NAV: Array<{ label: string; phase: number }> = [
+  { label: 'Calendar', phase: 2 },
   { label: 'Dashboard', phase: 1 },
   { label: 'Notes', phase: 2 },
   { label: 'Roadmap', phase: 2 },
@@ -44,7 +45,14 @@ export function Header({ meta, view, onView }: {
         </svg>
       </button>
 
-      <div className="flex min-w-0 items-center gap-2.5">
+      {/* Consolidated addendum §7 — logo and wordmark are one button home. */}
+      <button
+        type="button"
+        onClick={() => onView('Dashboard')}
+        data-testid="header-home"
+        aria-label="Go to Dashboard"
+        className="flex min-w-0 items-center gap-2.5 rounded-md px-1 py-0.5 transition hover:bg-sunken"
+      >
         <img
           src="/logo.png"
           alt="Revise &amp; Learn logo"
@@ -59,7 +67,7 @@ export function Header({ meta, view, onView }: {
         >
           Revise &amp; Learn
         </h1>
-      </div>
+      </button>
 
       <nav className="ml-2 hidden min-w-0 items-center gap-0.5 lg:flex" aria-label="Main">
         {NAV.map((item) => {

@@ -44,7 +44,7 @@ DEFAULT_SETTINGS: dict[str, object] = {
     "similarity_thresholds": SIMILARITY,
     "autosave_debounce_ms": 800,
     "autosave_interval_ms": 30000,
-    "session_defaults": {"practice_count": 20, "revision_count": 10},
+    "session_defaults": {"practice_count": 20, "revision_count": 5},
     "interview_mode": False,
     "fx_rate_usd_to_gbp": None,
     "monthly_cap_usd": None,

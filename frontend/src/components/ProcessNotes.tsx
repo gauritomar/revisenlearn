@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
-import { api, type PipelineJob } from '../lib/api'
+import { api, type PendingBlock, type PipelineJob } from '../lib/api'
 
 /** Spec §14 — the **Process notes** button, showing the unprocessed count.
  *
@@ -64,29 +64,8 @@ export function ProcessNotes({ pendingHint }: { pendingHint?: number }) {
   }
 
   if (confirming) {
-    return (
-      <span className="flex flex-wrap items-center gap-2 rounded-md border border-accent bg-accent-wash px-2.5 py-1 text-[0.75rem]">
-        <span className="text-accent-deep">
-          Send {count} block{count === 1 ? '' : 's'} to Gemini?
-        </span>
-        <button
-          type="button"
-          onClick={() => run.mutate()}
-          disabled={run.isPending}
-          data-testid="process-notes-confirm"
-          className="rounded bg-accent px-2 py-0.5 font-medium text-white transition hover:bg-accent-deep disabled:opacity-50"
-        >
-          {run.isPending ? 'Starting…' : 'Yes, process'}
-        </button>
-        <button
-          type="button"
-          onClick={() => setConfirming(false)}
-          className="text-muted transition hover:text-ink"
-        >
-          Cancel
-        </button>
-      </span>
-    )
+    return <Preview count={count} onCancel={() => setConfirming(false)}
+                    onConfirm={() => run.mutate()} pending={run.isPending} />
   }
 
   return (
@@ -118,5 +97,108 @@ export function ProcessNotes({ pendingHint }: { pendingHint?: number }) {
         </span>
       )}
     </span>
+  )
+}
+
+
+/** Consolidated addendum §7 — the block preview.
+ *
+ *  "This is the moment the user is about to spend real money; they should see
+ *  what's paying for it." So the confirmation is not a yes/no box: it lists
+ *  every block that would be sent, with a snippet, grouped by note.
+ */
+function Preview({ count, onConfirm, onCancel, pending }: {
+  count: number
+  onConfirm: () => void
+  onCancel: () => void
+  pending: boolean
+}) {
+  const { data } = useQuery({
+    queryKey: ['pipeline-preview'],
+    queryFn: () => api.pendingPreview(),
+  })
+
+  const grouped = new Map<string, PendingBlock[]>()
+  for (const block of data?.blocks ?? []) {
+    const list = grouped.get(block.note_title) ?? []
+    list.push(block)
+    grouped.set(block.note_title, list)
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-start justify-center bg-ink/15 px-4 pt-[10vh] backdrop-blur-[2px]"
+      onMouseDown={(e) => { if (e.target === e.currentTarget) onCancel() }}
+      role="presentation"
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="What will be sent"
+        data-testid="process-preview"
+        className="flex max-h-[70vh] w-full max-w-xl flex-col rounded-xl border border-line bg-surface shadow-xl"
+      >
+        <div className="border-b border-line-soft p-4">
+          <h2 className="text-[0.9375rem] font-semibold tracking-tight text-ink">
+            Send {count} block{count === 1 ? '' : 's'} to Gemini?
+          </h2>
+          <p className="mt-1 text-[0.75rem] leading-relaxed text-muted">
+            This is what will be sent, and it costs money.
+            {data ? ` Roughly ${data.estimated_tokens.toLocaleString()} input tokens.` : ''}
+          </p>
+        </div>
+
+        <div className="min-h-0 flex-1 overflow-y-auto p-3" data-testid="preview-blocks">
+          {!data ? (
+            <p className="text-[0.8125rem] text-faint">Loading…</p>
+          ) : (
+            [...grouped.entries()].map(([title, blocks]) => (
+              <section key={title} className="mb-3">
+                <h3 className="mb-1 text-[0.75rem] font-medium text-ink">{title}</h3>
+                <ul className="space-y-0.5">
+                  {blocks.map((block) => (
+                    <li
+                      key={block.note_block_id}
+                      data-testid={`preview-block-${block.note_block_id}`}
+                      className="flex items-baseline gap-2 rounded px-1.5 py-1 text-[0.75rem] odd:bg-paper"
+                    >
+                      <span
+                        className={`shrink-0 text-[0.625rem] uppercase tracking-wide ${
+                          block.state === 'stale' ? 'text-stale' : 'text-faint'
+                        }`}
+                      >
+                        {block.state === 'stale' ? 'edited' : 'new'}
+                      </span>
+                      <span className="min-w-0 flex-1 truncate text-ink-soft">
+                        {block.snippet}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            ))
+          )}
+        </div>
+
+        <div className="flex items-center justify-end gap-2 border-t border-line-soft p-3">
+          <button
+            type="button"
+            onClick={onCancel}
+            className="rounded-md px-3 py-1.5 text-[0.8125rem] text-muted transition hover:bg-sunken hover:text-ink"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            disabled={pending}
+            data-testid="process-notes-confirm"
+            className="rounded-md bg-accent px-3.5 py-1.5 text-[0.8125rem] font-medium text-white transition hover:bg-accent-deep disabled:opacity-50"
+          >
+            {pending ? 'Starting…' : 'Yes, process'}
+          </button>
+        </div>
+      </div>
+    </div>
   )
 }

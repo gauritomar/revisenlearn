@@ -6,9 +6,10 @@ import { api, type AppMeta } from '../lib/api'
 /** Spec §14 Settings. §17 puts the backup controls and the Markdown export
  *  here.
  *
- *  §10.1's interview toggle and §12.6's FX rate and soft monthly cap live here
- *  too. Settings this build still cannot act on are named with the phase they
- *  arrive in rather than rendered as dead controls.
+ *  Consolidated addendum §8: similarity thresholds, FSRS parameters, priority
+ *  weights and session sizes were live in the backend all along and are now
+ *  editable here. Model assignments stay read-only on purpose — spec §12.2
+ *  keeps swapping a model a config change.
  */
 export function Settings({ meta }: { meta: AppMeta | undefined }) {
   const qc = useQueryClient()
@@ -161,24 +162,9 @@ export function Settings({ meta }: { meta: AppMeta | undefined }) {
       <InterviewSection />
       <BudgetSection />
 
-      <Section title="Still to come">
-        <ul className="space-y-1 text-[0.8125rem] text-faint">
-          <Coming phase={4}>Similarity thresholds</Coming>
-          <Coming phase={5}>Model assignments, prompt versions</Coming>
-          <Coming phase={6}>Session defaults</Coming>
-          <Coming phase={7}>FSRS parameters, priority weights</Coming>
-        </ul>
-      </Section>
+      <TuningSection />
+      <ModelSection />
     </div>
-  )
-}
-
-function Coming({ phase, children }: { phase: number; children: React.ReactNode }) {
-  return (
-    <li className="flex items-baseline gap-2">
-      <span className="min-w-0 flex-1">{children}</span>
-      <span className="shrink-0 text-[0.6875rem]">Phase {phase}</span>
-    </li>
   )
 }
 
@@ -328,5 +314,200 @@ function BudgetSection() {
         )}
       </div>
     </Section>
+  )
+}
+
+
+/** Consolidated addendum §8.
+ *
+ *  Similarity thresholds, FSRS parameters, priority weights and session
+ *  defaults were all live in the backend and reachable via
+ *  `PATCH /api/settings` — only the Settings UI said "Still to come", which
+ *  was simply wrong. These are the missing controls.
+ */
+function TuningSection() {
+  const qc = useQueryClient()
+  const { data } = useQuery({ queryKey: ['settings'], queryFn: api.settings })
+  const save = useMutation({
+    mutationFn: (values: Record<string, unknown>) => api.patchSettings(values),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['settings'] })
+      void qc.invalidateQueries({ queryKey: ['practice-defaults'] })
+      void qc.invalidateQueries({ queryKey: ['revision-dashboard'] })
+    },
+  })
+
+  const values = (data?.values ?? {}) as Record<string, never>
+  const thresholds = (values.similarity_thresholds ?? {}) as Record<string, number>
+  const fsrs = (values.fsrs ?? {}) as Record<string, number | boolean>
+  const weights = (values.priority_weights ?? {}) as Record<string, number>
+  const sessions = (values.session_defaults ?? {}) as Record<string, number>
+
+  return (
+    <>
+      <Section title="Concept identity">
+        <p className="mb-2.5 text-[0.75rem] leading-relaxed text-muted">
+          Above the merge threshold two concepts are merged automatically;
+          between the two they go to the graph console's merge queue for you to
+          decide.
+        </p>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <NumberField
+            label="Auto-merge at" testid="threshold-auto"
+            value={thresholds.auto_merge ?? 0.92} step="0.01" min="0" max="1"
+            onCommit={(v) => save.mutate({
+              similarity_thresholds: {
+                ...thresholds, auto_merge: v,
+                merge_queue: thresholds.merge_queue ?? 0.82,
+              },
+            })}
+          />
+          <NumberField
+            label="Queue for review at" testid="threshold-queue"
+            value={thresholds.merge_queue ?? 0.82} step="0.01" min="0" max="1"
+            onCommit={(v) => save.mutate({
+              similarity_thresholds: {
+                ...thresholds, merge_queue: v,
+                auto_merge: thresholds.auto_merge ?? 0.92,
+              },
+            })}
+          />
+        </div>
+      </Section>
+
+      <Section title="Scheduling">
+        <div className="grid gap-3 sm:grid-cols-2">
+          <NumberField
+            label="Desired retention" testid="fsrs-retention"
+            value={Number(fsrs.desired_retention ?? 0.9)}
+            step="0.01" min="0.7" max="0.99"
+            onCommit={(v) => save.mutate({ fsrs: { ...fsrs, desired_retention: v } })}
+          />
+          <NumberField
+            label="Maximum interval (days)" testid="fsrs-max-interval"
+            value={Number(fsrs.maximum_interval ?? 365)} step="1" min="1" max="3650"
+            onCommit={(v) => save.mutate({ fsrs: { ...fsrs, maximum_interval: v } })}
+          />
+        </div>
+        <p className="mt-3 mb-1.5 text-[0.6875rem] font-medium text-ink-soft">
+          Queue priority weights
+        </p>
+        <div className="grid gap-3 sm:grid-cols-4">
+          {(['w_overdue', 'w_lapse', 'w_gap', 'w_interview'] as const).map((key) => (
+            <NumberField
+              key={key}
+              label={key.replace('w_', '')}
+              testid={`weight-${key}`}
+              value={weights[key] ?? { w_overdue: 0.5, w_lapse: 0.3, w_gap: 0.4, w_interview: 0.3 }[key]}
+              step="0.05" min="0" max="5"
+              onCommit={(v) => save.mutate({ priority_weights: { ...weights, [key]: v } })}
+            />
+          ))}
+        </div>
+        <p className="mt-2 text-[0.75rem] leading-relaxed text-muted">
+          These are the spec's own starting guesses. Every review is logged with
+          its before and after state, so they can be fitted from evidence later.
+        </p>
+      </Section>
+
+      <Section title="Session sizes">
+        <div className="grid gap-3 sm:grid-cols-2">
+          <NumberField
+            label="Practice questions" testid="session-practice"
+            value={sessions.practice_count ?? 20} step="1" min="1" max="200"
+            onCommit={(v) => save.mutate({
+              session_defaults: { ...sessions, practice_count: v },
+            })}
+          />
+          <NumberField
+            label="Revision questions" testid="session-revision"
+            value={sessions.revision_count ?? 5} step="1" min="1" max="100"
+            onCommit={(v) => save.mutate({
+              session_defaults: { ...sessions, revision_count: v },
+            })}
+          />
+        </div>
+        <p className="mt-2 text-[0.75rem] leading-relaxed text-muted">
+          What Practice and Revision preselect. Five is a deliberately small
+          revision default — starting is the hard part.
+        </p>
+      </Section>
+    </>
+  )
+}
+
+/** §8 — model assignments are genuinely config-file-only, matching spec §12.2
+ *  ("swapping a model is a config change, never a code change"). Shown
+ *  read-only, with where to change them, rather than mislabelled. */
+function ModelSection() {
+  const { data } = useQuery({ queryKey: ['providers'], queryFn: api.providers })
+
+  return (
+    <Section title="Models">
+      {!data ? (
+        <p className="text-[0.8125rem] text-faint">Loading…</p>
+      ) : (
+        <table data-testid="model-assignments" className="w-full text-[0.75rem]">
+          <thead>
+            <tr className="text-left text-faint">
+              <th className="pb-1 font-medium">Task</th>
+              <th className="pb-1 font-medium">Model</th>
+              <th className="pb-1 font-medium">Thinking</th>
+              <th className="pb-1 font-medium">Mode</th>
+            </tr>
+          </thead>
+          <tbody className="text-ink-soft">
+            {Object.entries(data.tasks).map(([task, cfg]) => (
+              <tr key={task} className="odd:bg-paper">
+                <td className="py-1 pr-2">{task.replace(/_/g, ' ')}</td>
+                <td className="py-1 pr-2 font-mono">{cfg.model}</td>
+                <td className="py-1 pr-2">{cfg.thinking_level ?? '—'}</td>
+                <td className="py-1">{cfg.mode}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+      <p className="mt-2 text-[0.75rem] leading-relaxed text-muted">
+        Read-only here by design. Swapping a model is a config change — edit{' '}
+        <code>config/providers.yaml</code> and restart. Prompt versions are
+        files under <code>src/revisenlearn/prompts/</code>; a prompt is never
+        edited in place, only superseded by a new version.
+      </p>
+    </Section>
+  )
+}
+
+function NumberField({ label, testid, value, step, min, max, onCommit }: {
+  label: string
+  testid: string
+  value: number
+  step: string
+  min: string
+  max: string
+  onCommit: (v: number) => void
+}) {
+  const [local, setLocal] = useState(String(value))
+  useEffect(() => setLocal(String(value)), [value])
+  return (
+    <label className="block">
+      <span className="mb-1 block text-[0.6875rem] font-medium text-ink-soft">
+        {label}
+      </span>
+      <input
+        type="number"
+        value={local}
+        step={step}
+        min={min}
+        max={max}
+        data-testid={testid}
+        onChange={(e) => setLocal(e.target.value)}
+        onBlur={() => {
+          const parsed = Number(local)
+          if (!Number.isNaN(parsed) && parsed !== value) onCommit(parsed)
+        }}
+        className="w-full rounded-md border border-line bg-paper px-2 py-1.5 text-[0.8125rem] tabular-nums text-ink outline-none focus:border-accent focus:bg-surface"
+      />
+    </label>
   )
 }

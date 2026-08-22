@@ -265,3 +265,24 @@ export function DayView({ date }: { date: string }) {
     </div>
   )
 }
+
+
+/** Consolidated addendum §7 — the app's landing view.
+ *
+ *  The month grid on its own page rather than as a dashboard card, since it is
+ *  now the first thing seen. Clicking a day opens that day (§14 of the main
+ *  spec), exactly as it does from the Dashboard.
+ */
+export function CalendarScreen() {
+  return (
+    <div data-testid="calendar-screen" className="mx-auto w-full max-w-3xl px-4 py-6 sm:px-6">
+      <h2 className="text-xl font-semibold tracking-tight text-ink">Calendar</h2>
+      <p className="mt-1 text-[0.875rem] leading-relaxed text-muted">
+        What you wrote, and when. Click a day to open it.
+      </p>
+      <div className="mt-5 rounded-lg border border-line bg-surface p-4">
+        <Calendar />
+      </div>
+    </div>
+  )
+}

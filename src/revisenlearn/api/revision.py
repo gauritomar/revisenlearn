@@ -13,8 +13,9 @@ router = APIRouter()
 
 
 class SessionCreate(BaseModel):
-    #: Spec §9.6 — default 5, not 10.
-    count: int = Field(default=revision.DEFAULT_SESSION_SIZE, ge=1, le=100)
+    #: Spec §9.6 — small by default. `None` means "use Settings", which the
+    #: consolidated addendum §8 finally wires up.
+    count: int | None = Field(default=None, ge=1, le=100)
     subject_ids: list[int] | None = None
 
 
@@ -46,16 +47,28 @@ class RetestAnswer(BaseModel):
     response_ms: int | None = None
 
 
+def _default_count(session: Session) -> int:
+    from .practice import session_defaults
+
+    return int(session_defaults(session)["revision_count"])
+
+
 @router.get("/revision/dashboard")
 def dashboard(session: Session = Depends(get_session)) -> dict:
-    return revision.dashboard(session)
+    data = revision.dashboard(session)
+    # §8 — the picker's preset comes from Settings, not a constant.
+    preset = _default_count(session)
+    data["default_size"] = preset
+    data["sizes"] = sorted({5, 10, 20, preset})
+    return data
 
 
 @router.post("/revision/session", status_code=201)
 def create(payload: SessionCreate,
            session: Session = Depends(get_session)) -> dict:
+    count = payload.count or _default_count(session)
     row = revision.create_session(
-        session, payload.count, tuple(payload.subject_ids or ())
+        session, count, tuple(payload.subject_ids or ())
     )
     if row.planned_count == 0:
         raise HTTPException(409, "Nothing is due yet")
@@ -164,7 +177,8 @@ def set_interview_mode(payload: InterviewMode,
 def mock_round(payload: SessionCreate | None = None,
                session: Session = Depends(get_session)) -> dict:
     """Spec §18 Phase 10 — five interview questions across related concepts."""
-    count = payload.count if payload else revision.MOCK_ROUND_SIZE
+    count = (payload.count if payload and payload.count
+             else revision.MOCK_ROUND_SIZE)
     try:
         row = revision.mock_round(session, count)
     except ValueError as exc:

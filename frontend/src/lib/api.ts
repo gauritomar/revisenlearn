@@ -386,6 +386,15 @@ export type Progress = {
   reviews_by_day: Array<{ date: string; count: number }>
 }
 
+export type PendingBlock = {
+  note_block_id: number
+  note_id: number
+  note_title: string
+  block_type: string
+  snippet: string
+  state: string
+}
+
 export type SearchHit = {
   kind: 'note_block' | 'concept'
   note_id: number | null
@@ -493,6 +502,14 @@ export const api = {
   pending: (subjectId?: number) =>
     request<{ unprocessed_blocks: number; subject_id: number | null }>(
       `/api/pipeline/pending${subjectId ? `?subject_id=${subjectId}` : ''}`,
+    ),
+  pendingPreview: (subjectId?: number) =>
+    request<{
+      unprocessed_blocks: number
+      estimated_tokens: number
+      blocks: PendingBlock[]
+    }>(
+      `/api/pipeline/pending?preview=true${subjectId ? `&subject_id=${subjectId}` : ''}`,
     ),
   runPipeline: (subject_id?: number | null) =>
     request<PipelineJob>('/api/pipeline/run', {
@@ -690,6 +707,15 @@ export const api = {
       '/api/maintenance/adaptive-coverage',
       { method: 'POST' },
     ),
+
+  providers: () =>
+    request<{
+      provider: string
+      tasks: Record<string, { model: string; thinking_level?: string; mode: string }>
+      source: string
+    }>('/api/providers'),
+  practiceDefaults: () =>
+    request<{ default: number; options: number[] }>('/api/practice/defaults'),
 
   search: (q: string) =>
     request<{ query: string; hits: SearchHit[] }>(`/api/search?q=${encodeURIComponent(q)}`),

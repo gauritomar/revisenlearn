@@ -13,9 +13,28 @@ from ..models import MCQ, Concept
 router = APIRouter()
 
 
+def session_defaults(session: Session) -> dict:
+    """Consolidated addendum §8 — `settings.session_defaults` was seeded but
+    never read. It is the source of truth now, for both loops."""
+    import json
+
+    from ..models import Setting
+
+    fallback = {"practice_count": 20, "revision_count": 5}
+    row = session.get(Setting, "session_defaults")
+    if row is None:
+        return fallback
+    try:
+        value = json.loads(row.value_json)
+    except json.JSONDecodeError:
+        return fallback
+    return {**fallback, **(value if isinstance(value, dict) else {})}
+
+
 class SessionCreate(BaseModel):
-    #: Spec §9.1 — "user picks a count (20 / 30 / 50 / custom)".
-    count: int = Field(default=20, ge=1, le=200)
+    #: Spec §9.1 — "user picks a count (20 / 30 / 50 / custom)". `None` means
+    #: "use whatever Settings says".
+    count: int | None = Field(default=None, ge=1, le=200)
     scope: dict | None = None
 
 
@@ -30,6 +49,16 @@ class AnswerIn(BaseModel):
     item_id: int
     selected_option_id: str
     response_ms: int | None = None
+
+
+@router.get("/practice/defaults")
+def defaults(session: Session = Depends(get_session)) -> dict:
+    """What the count picker should offer and preselect."""
+    values = session_defaults(session)
+    preset = int(values["practice_count"])
+    # Always offer the spec's three, plus whatever Settings says if it differs.
+    options = sorted({20, 30, 50, preset})
+    return {"default": preset, "options": options}
 
 
 @router.get("/practice/available")
@@ -50,7 +79,8 @@ def available(session: Session = Depends(get_session)) -> dict:
 def create(payload: SessionCreate,
            session: Session = Depends(get_session)) -> SessionOut:
     scope = practice.Scope.from_payload(payload.scope)
-    row = practice.create_session(session, payload.count, scope)
+    count = payload.count or int(session_defaults(session)["practice_count"])
+    row = practice.create_session(session, count, scope)
     if row.planned_count == 0:
         raise HTTPException(409, "No active MCQs to practise yet")
     return SessionOut(id=row.id, planned_count=row.planned_count,

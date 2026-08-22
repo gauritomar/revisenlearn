@@ -13,7 +13,7 @@ import { AddDialog } from './components/AddDialog'
 import { ResourceQuickAdd } from './components/ResourceQuickAdd'
 import { ResourceList } from './components/ResourceList'
 import { ResourceSplitView } from './components/ResourceSplitView'
-import { DayView } from './components/Calendar'
+import { CalendarScreen, DayView } from './components/Calendar'
 import { Settings } from './components/Settings'
 import { Jobs } from './components/Jobs'
 import { Practice } from './components/Practice'
@@ -40,7 +40,9 @@ const COLLAPSE_BELOW = 900
 
 export function App() {
   const { data: meta } = useQuery({ queryKey: ['meta'], queryFn: api.meta })
-  const [view, setView] = useState('Dashboard')
+  // Consolidated addendum §7 — the app opens on Calendar. Dashboard stays
+  // reachable from the nav and from the header button.
+  const [view, setView] = useState('Calendar')
 
   const leftCollapsed = useUI((s) => s.leftCollapsed)
   const rightCollapsed = useUI((s) => s.rightCollapsed)
@@ -157,6 +159,7 @@ function MainContent({ view, onView, activeNoteId, activeResourceId, activeDate,
   if (view === 'Todos') return <Todos />
   if (view === 'Graph') return <Graph />
   if (view === 'Usage') return <Usage />
+  if (view === 'Calendar') return <CalendarScreen />
   if (view === 'Resources') return <ResourceList />
   if (view === 'Notes') return <NotesEmpty />
   return <Dashboard onView={onView} />

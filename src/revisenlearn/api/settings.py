@@ -52,3 +52,21 @@ def patch_settings(payload: SettingsPatch,
         session.add(row)
     session.flush()
     return get_settings(session)
+
+
+@router.get("/providers")
+def providers() -> dict:
+    """Read-only view of `config/providers.yaml` (consolidated addendum §8).
+
+    Spec §12.2 keeps model assignment a config change, so this is shown rather
+    than edited. No key material is in that file, and none is returned here.
+    """
+    from .. import config
+
+    data = config.providers()
+    return {
+        "provider": data.get("provider", "gemini"),
+        "tasks": data.get("tasks", {}),
+        "embeddings": data.get("embeddings", {}),
+        "source": "config/providers.yaml",
+    }

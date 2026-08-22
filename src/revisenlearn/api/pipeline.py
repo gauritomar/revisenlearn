@@ -64,11 +64,25 @@ class JobDetail(BaseModel):
     runs: list[LLMRunOut]
 
 
+class PendingBlock(BaseModel):
+    """One block that would be sent, with enough text to recognise it."""
+
+    note_block_id: int
+    note_id: int
+    note_title: str
+    block_type: str
+    snippet: str
+    state: str          # unprocessed | stale
+
+
 class PendingOut(BaseModel):
-    """What the Process notes button counts."""
+    """What the Process notes button counts, and — per consolidated addendum
+    §7 — exactly which blocks it would send."""
 
     unprocessed_blocks: int
     subject_id: int | None = None
+    blocks: list[PendingBlock] = []
+    estimated_tokens: int = 0
 
 
 def _out(job: PipelineJob) -> JobOut:
@@ -77,11 +91,45 @@ def _out(job: PipelineJob) -> JobOut:
 
 @router.get("/pipeline/pending", response_model=PendingOut)
 def pending(subject_id: int | None = None,
+            preview: bool = False,
             session: Session = Depends(get_session)) -> PendingOut:
-    return PendingOut(
-        unprocessed_blocks=len(unprocessed_blocks(session, subject_id)),
-        subject_id=subject_id,
+    """Consolidated addendum §7 — "show the user a preview of exactly which
+    blocks (with a snippet of their text) are about to be sent to Gemini …
+    This is the moment the user is about to spend real money; they should see
+    what's paying for it."
+
+    The count is always returned; the block list only when asked for, so the
+    button's badge stays a cheap poll.
+    """
+    from ..models import Note
+    from ..pipeline.chunking import CHARS_PER_TOKEN
+
+    blocks = unprocessed_blocks(session, subject_id)
+    out = PendingOut(unprocessed_blocks=len(blocks), subject_id=subject_id)
+    if not preview:
+        return out
+
+    titles: dict[int, str] = {}
+    rows: list[PendingBlock] = []
+    for block in blocks:
+        if block.note_id not in titles:
+            note = session.get(Note, block.note_id)
+            titles[block.note_id] = note.title if note else "(untitled)"
+        text = (block.text or "").strip()
+        rows.append(PendingBlock(
+            note_block_id=block.id,
+            note_id=block.note_id,
+            note_title=titles[block.note_id],
+            block_type=block.block_type,
+            snippet=text[:160] + ("…" if len(text) > 160 else ""),
+            state=("stale" if block.processed_hash is not None else "unprocessed"),
+        ))
+
+    out.blocks = rows
+    out.estimated_tokens = sum(
+        max(1, len(b.text or "") // CHARS_PER_TOKEN) for b in blocks
     )
+    return out
 
 
 @router.post("/pipeline/run", response_model=JobOut, status_code=202)
