@@ -14,6 +14,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlmodel import Session, select
 
 from ..db import get_session, reindex_block
+from ..identity import invalidate_sources_for_block
 from ..hashing import content_hash
 from ..models import Note, NoteBlock, Resource, Subject, Subtopic, Topic
 from .schemas import (
@@ -309,6 +310,7 @@ def delete_note(note_id: int, session: Session = Depends(get_session)) -> None:
         block.deleted_at = now
         session.flush()
         reindex_block(session, block)
+        invalidate_sources_for_block(session, block.id)
 
 
 # --- Blocks ----------------------------------------------------------------
@@ -336,6 +338,7 @@ def save_blocks(note_id: int, payload: BlocksSave,
     for incoming in payload.blocks:
         new_hash = content_hash(incoming.text)
         block = existing.get(incoming.id) if incoming.id is not None else None
+        previous_hash = block.content_hash if block is not None else None
         if block is None:
             block = NoteBlock(
                 note_id=note_id,
@@ -356,6 +359,10 @@ def save_blocks(note_id: int, payload: BlocksSave,
             session.flush()
         seen.add(block.id)
         reindex_block(session, block)
+        # §7.4 — a changed block invalidates the concepts drawn from it. The
+        # concepts stay scheduled; they just lose their evidence.
+        if block.content_hash != previous_hash:
+            invalidate_sources_for_block(session, block.id)
 
     # Blocks the client no longer sends were deleted in the editor. Soft-delete
     # them — nothing is ever hard-deleted (principle §1.7).
@@ -366,6 +373,7 @@ def save_blocks(note_id: int, payload: BlocksSave,
             session.add(block)
             session.flush()
             reindex_block(session, block)
+            invalidate_sources_for_block(session, block.id)
 
     note.updated_at = now
     session.add(note)

@@ -1188,8 +1188,10 @@ source = { editable = "." }
 dependencies = [
     { name = "alembic" },
     { name = "fastapi" },
+    { name = "fastembed" },
     { name = "httpx" },
     { name = "keyring" },
+    { name = "numpy" },
     { name = "pydantic" },
     { name = "pywebview" },
     { name = "pyyaml" },
@@ -1198,9 +1200,6 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
-embeddings = [
-    { name = "fastembed" },
-]
 fsrs = [
     { name = "fsrs" },
 ]
@@ -1220,18 +1219,19 @@ dev = [
 requires-dist = [
     { name = "alembic", specifier = ">=1.14" },
     { name = "fastapi", specifier = ">=0.115" },
-    { name = "fastembed", marker = "extra == 'embeddings'", specifier = ">=0.4" },
+    { name = "fastembed", specifier = ">=0.4" },
     { name = "fsrs", marker = "extra == 'fsrs'", specifier = ">=5.0" },
     { name = "google-genai", marker = "extra == 'llm'", specifier = ">=2.0.0" },
     { name = "httpx", specifier = ">=0.27" },
     { name = "keyring", specifier = ">=25.4" },
+    { name = "numpy", specifier = ">=1.26" },
     { name = "pydantic", specifier = ">=2.9" },
     { name = "pywebview", specifier = ">=5.3" },
     { name = "pyyaml", specifier = ">=6.0" },
     { name = "sqlmodel", specifier = ">=0.0.22" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.32" },
 ]
-provides-extras = ["embeddings", "llm", "fsrs"]
+provides-extras = ["llm", "fsrs"]
 
 [package.metadata.requires-dev]
 dev = [

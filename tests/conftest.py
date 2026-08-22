@@ -236,3 +236,36 @@ def page(browser, app: AppProcess):
 def seeded_page(browser, seeded_app: AppProcess):
     """A browser page against an app with the first-run starter tree."""
     yield from _open_page(browser, seeded_app)
+
+
+# --------------------------------------------------------------------------
+# In-process database session
+#
+# The identity subsystem (spec §7) is mostly pure logic over the database, and
+# §19 says to test that properly rather than only through HTTP. These tests run
+# against a real migrated SQLite file in-process, which is both faster and more
+# direct than driving a server.
+# --------------------------------------------------------------------------
+
+@pytest.fixture
+def session(tmp_path: Path, monkeypatch):
+    import subprocess as sp
+
+    db = tmp_path / "inproc.db"
+    monkeypatch.setenv("RNL_DB_PATH", str(db))
+    monkeypatch.setenv("RNL_DATA_DIR", str(tmp_path / "data"))
+
+    result = sp.run(
+        [sys.executable, "-m", "alembic", "upgrade", "head"],
+        cwd=REPO_ROOT,
+        env={**os.environ, "RNL_DB_PATH": str(db)},
+        capture_output=True, text=True,
+    )
+    assert result.returncode == 0, result.stderr
+
+    from revisenlearn import db as db_module
+
+    db_module.reset_engine()
+    with db_module.session_scope() as s:
+        yield s
+    db_module.reset_engine()
