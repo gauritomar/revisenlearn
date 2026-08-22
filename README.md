@@ -122,14 +122,25 @@ logged — startup logs only `present`/`absent` and which source it came from.
    - ` ```python ` (or `sql`, `javascript`, …) a syntax-highlighted code
      block, and it works inside a list too
    - a URL becomes a resource on its own, no dialog
+   - **+ New section** adds a heading with bullets under it, at the top or the
+     end — notes arrive out of order, so both ends are one click away
 5. Autosave is debounced 800ms after you stop typing, plus on blur, plus every
    30 seconds; `⌘S` forces it.
 6. `⌘K` searches everything you have written, and adds a subject, topic,
    subtopic or lesson anywhere in the tree without expanding it first.
 
-Adding and deleting live in the Roadmap. The sidebar is for getting around:
-it has no delete, because a trash icon on a row you are only passing through
-is an accident waiting to happen.
+Adding and deleting live in the Roadmap, where rows also drag to reorder and
+subjects and topics fold away. The sidebar is for getting around: it has no
+delete, because a trash icon on a row you are only passing through is an
+accident waiting to happen.
+
+A lesson's status is one button, cycling **not started → in progress (amber)
+→ done (green) → come back to this (red)**. Todos use the same two colours and
+are yours alone — nothing in the app writes to them.
+
+Any page can carry the link it came from — an article, a lecture, a LeetCode
+problem — shown under its title. That link belongs to the page, so it survives
+the note being rewritten and is never sent to the model as content.
 
 Or start from a resource, which is the faster daily entry point: **Add
 resource**, paste a link, press Enter. Click it to get a split view — the

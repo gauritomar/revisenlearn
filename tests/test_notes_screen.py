@@ -219,6 +219,12 @@ def test_renaming_a_note_in_the_editor(page, app) -> None:
     with httpx.Client(base_url=app.base_url, timeout=30) as c:
         note = c.post("/api/notes/ensure",
                       json={"subtopic_id": branch["subtopic"]["id"]}).json()
+        # The calendar shows days with writing on them, so an empty note is
+        # not a day: give it something.
+        c.put(f"/api/notes/{note['id']}/blocks", json={"blocks": [
+            {"id": None, "position": 0, "block_type": "paragraph",
+             "text": "A first line"},
+        ]})
     page.reload(wait_until="networkidle")
     _open_freeform_note(page, note["id"])
 
@@ -246,6 +252,12 @@ def test_escape_cancels_a_rename(page, app) -> None:
     with httpx.Client(base_url=app.base_url, timeout=30) as c:
         note = c.post("/api/notes/ensure",
                       json={"subtopic_id": branch["subtopic"]["id"]}).json()
+        # The calendar shows days with writing on them, so an empty note is
+        # not a day: give it something.
+        c.put(f"/api/notes/{note['id']}/blocks", json={"blocks": [
+            {"id": None, "position": 0, "block_type": "paragraph",
+             "text": "A first line"},
+        ]})
     page.reload(wait_until="networkidle")
     _open_freeform_note(page, note["id"])
 
@@ -270,11 +282,22 @@ def test_creating_and_switching_between_additional_notes(page, app) -> None:
     with httpx.Client(base_url=app.base_url, timeout=30) as c:
         note = c.post("/api/notes/ensure",
                       json={"subtopic_id": branch["subtopic"]["id"]}).json()
+        # The calendar shows days with writing on them, so an empty note is
+        # not a day: give it something.
+        c.put(f"/api/notes/{note['id']}/blocks", json={"blocks": [
+            {"id": None, "position": 0, "block_type": "paragraph",
+             "text": "A first line"},
+        ]})
     page.reload(wait_until="networkidle")
     _open_freeform_note(page, note["id"])
 
     editor = page.get_by_test_id("note-editor")
     editor.click()
+    # The note already has the line that puts it on the calendar; write on a
+    # new one rather than into the middle of it.
+    page.keyboard.press("Control+End")
+    page.keyboard.press("End")
+    page.keyboard.press("Enter")
     page.keyboard.type("First note content")
     page.keyboard.press("Control+s")
     page.wait_for_function(
@@ -312,7 +335,10 @@ def test_creating_and_switching_between_additional_notes(page, app) -> None:
     rows = app.query(
         "SELECT nb.text FROM note_blocks nb WHERE nb.deleted_at IS NULL ORDER BY nb.text"
     )
-    assert rows == [("First note content",), ("Second note content",)]
+    # "A first line" is the seed that puts the note on the calendar, which is
+    # how this test reaches it.
+    assert rows == [("A first line",), ("First note content",),
+                    ("Second note content",)]
     assert app.query("SELECT count(*) FROM notes WHERE deleted_at IS NULL")[0][0] == 2
 
     # Switch back to the first via the sibling pills.

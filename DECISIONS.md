@@ -779,7 +779,84 @@ they are the record of what was spent, and cost history is not content.
 
 ---
 
-## 12. What is not built
+## 12. Colour, links and the second round of use
+
+Everything here came from using the thing for an evening.
+
+### Green, amber and red on lesson status — and only there
+
+Addendum §5 **[LOCKED]** says the progress layer "must not share a visual
+language" with FSRS mastery, because a green 100% would teach that finishing a
+checklist is the same as knowing the material. The user asked for exactly that
+palette on lesson status: *"click on its done to do button and it will be
+highlighted in green and in-progress should be yellow, red if i need to return
+to it."*
+
+Both hold, narrowly. The **bars** stay what §5 requires — grey track, single
+accent fill, no traffic light — and mastery badges keep their own vocabulary.
+The colour is on the **status box**, which is the user saying where they are,
+not the app grading them. A fourth status, `revisit`, carries the red: "I need
+to come back to this" is a different thing from never having started, and
+without it red would have to mean "not started", which is the opposite of
+useful.
+
+Todos use the same two colours for the same reason: one glance should read the
+same way in both places.
+
+### A link belongs to the page, not to the note
+
+*"I should be able to embed links in topic/lesson names … and that link should
+be displayed when its page is open."* So `url` is a column on subjects,
+topics, subtopics and lessons, shown under the page title. It deliberately is
+not a line in the note: it should survive the note being rewritten, and it
+should not be sent to the model as content.
+
+### The calendar shows work, not visits
+
+Opening a page creates its note. That made "a note is dated today" mean "a
+page was visited", and the calendar lit up for pages nobody wrote in. A day
+now appears when there is real writing on it — a note dated that day with
+content, or blocks created or edited that day — and never for notes on pages
+that have been deleted. Empty notes, date dividers and empty checkboxes are
+not writing.
+
+### Deleted pages stop costing money
+
+Nothing is hard-deleted (§1.7), so a deleted subtopic keeps its notes and
+blocks. The pipeline was still sending them: nine blocks pending where the
+user could see five, four of them from a subtopic deleted hours earlier.
+`revisenlearn.tree` holds the one rule both the pipeline and the calendar ask —
+"is this note still somewhere the user can see it?" — so the two cannot drift.
+
+### The Interactions API wants the schema, not an envelope
+
+The first real extraction failed with
+
+    The value 'json_schema' is not supported for 'type' at 'response_format'.
+    Supported values: … 'object' …
+
+because the provider was sending OpenAI's `{"type": "json_schema",
+"json_schema": {...}}` wrapper. This API wants the JSON Schema itself, whose
+top-level type is `object`. Pydantic lifts nested models into `$defs` and
+points at them with `$ref`, which this API does not resolve, so the references
+are inlined and the keywords it rejects (`title`, `default`,
+`additionalProperties`) are stripped.
+
+This is asserted by a contract test rather than a live call, because the
+account it would be verified against has no credits — see below.
+
+### A failure the user can act on
+
+"Extraction failed: Gemini call failed: Error code: 429 …" with a Retry button
+is the least useful thing this app could say when the answer is "your credits
+ran out" — and pressing Retry spends again on the same wall. Provider errors
+are now classified (`credits`, `auth`, `request`, `rate_limit`), stored on the
+job, and shown as a sentence about what to do. Retry is only offered when
+retrying could plausibly work.
+
+---
+
+## 13. What is not built
 
 Honest list, so nothing here is a surprise.
 

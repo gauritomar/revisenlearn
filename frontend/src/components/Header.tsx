@@ -14,6 +14,9 @@ import { ProcessNotes } from './ProcessNotes'
 const NAV: Array<{ label: string; phase: number }> = [
   { label: 'Dashboard', phase: 1 },
   { label: 'Roadmap', phase: 2 },
+  // "Let's bring back a resource section where I just want to save resources
+  // for my own short links and convenience."
+  { label: 'Resources', phase: 5 },
   { label: 'Todos', phase: 2 },
   { label: 'Runs', phase: 5 },
   { label: 'Practice', phase: 6 },
@@ -82,7 +85,10 @@ export function Header({ meta, view, onView, narrow }: {
         </h1>
       </button>
 
-      <nav className="ml-2 hidden min-w-0 items-center gap-0.5 lg:flex" aria-label="Main">
+      {/* Roadmap survives every width: it is the way into the notes, and the
+          Dashboard is always one click away on the wordmark. The rest of the
+          nav folds away on a narrow window. */}
+      <nav className="ml-2 flex min-w-0 items-center gap-0.5" aria-label="Main">
         {NAV.map((item) => {
           const available = item.phase <= currentPhase
           const active = view === item.label
@@ -96,6 +102,7 @@ export function Header({ meta, view, onView, narrow }: {
               data-testid={`nav-${item.label.toLowerCase()}`}
               className={[
                 'rounded-md px-2.5 py-1.5 text-[0.8125rem] transition',
+                item.label === 'Roadmap' ? '' : 'hidden lg:block',
                 active ? 'bg-accent-wash font-medium text-accent-deep' : 'text-ink-soft',
                 available ? 'hover:bg-sunken' : 'cursor-not-allowed text-faint',
               ].join(' ')}

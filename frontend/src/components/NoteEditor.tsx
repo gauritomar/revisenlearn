@@ -128,11 +128,17 @@ export function NoteEditor({ noteId, titleOverride }: {
   // whenever it arrives, without re-hydrating on every refetch and fighting
   // the user's cursor.
   const hydratedRef = useRef<number | null>(null)
+  const [hydrated, setHydrated] = useState(false)
   useEffect(() => {
     if (!editor || !note) return
-    if (hydratedRef.current === note.id) return
+    if (hydratedRef.current === note.id) {
+      setHydrated(true)
+      return
+    }
+    setHydrated(false)
     editor.commands.setContent(blocksToDoc(note.blocks), false)
     hydratedRef.current = note.id
+    setHydrated(true)
     setSaveState('clean')
   }, [editor, note])
 
@@ -194,7 +200,11 @@ export function NoteEditor({ noteId, titleOverride }: {
     return (
       <>
         <NoteHeader note={note} saveState={saveState} titleOverride={titleOverride} />
+        {/* Only once the stored note is in the editor: inserting before that
+            would be overwritten by hydration, losing what was just added. */}
+        {hydrated && <SectionButton editor={editor} where="top" />}
         <EditorContent editor={editor} />
+        {hydrated && <SectionButton editor={editor} where="end" />}
       </>
     )
   }
@@ -207,5 +217,61 @@ export function NoteEditor({ noteId, titleOverride }: {
         <EditorContent editor={editor} />
       </div>
     </div>
+  )
+}
+
+
+/** Add a section — a heading with bullets under it — without scrolling.
+ *
+ *  "Each block can have a heading then bullets under it, some blocks might
+ *  not have headings … my notes are kind of random as i come across a concept
+ *  i just add it, theyre not very sequential."
+ *
+ *  So a section can go on either end: at the top when the newest thing should
+ *  be the first thing, at the end when the note reads in order. The heading is
+ *  optional — leave it empty and it disappears on save, leaving the bullets.
+ */
+function SectionButton({ editor, where }: {
+  editor: ReturnType<typeof useEditor>
+  where: 'top' | 'end'
+}) {
+  if (!editor) return null
+
+  const add = () => {
+    const at = where === 'top' ? 0 : editor.state.doc.content.size
+    editor
+      .chain()
+      .focus()
+      .insertContentAt(at, [
+        { type: 'heading', attrs: { level: 3 } },
+        {
+          type: 'bulletList',
+          content: [{ type: 'listItem', content: [{ type: 'paragraph' }] }],
+        },
+      ])
+      // Land in the heading that was just inserted, not after the bullets.
+      .setTextSelection(at + 1)
+      .run()
+
+  }
+
+  return (
+    <button
+      type="button"
+      // The editor keeps the caret: a button that takes focus on mousedown
+      // swallows the first keystrokes, so the new heading would sit there
+      // empty while the user typed into nothing.
+      onMouseDown={(e) => e.preventDefault()}
+      onClick={add}
+      data-testid={`add-section-${where}`}
+      className={[
+        'flex w-full items-center gap-1.5 rounded-md px-1.5 py-1 text-left text-[0.75rem]',
+        'text-faint transition hover:bg-sunken hover:text-ink',
+        where === 'top' ? 'mb-1' : 'mt-1',
+      ].join(' ')}
+    >
+      <span aria-hidden="true">+</span>
+      {where === 'top' ? 'New section at the top' : 'New section'}
+    </button>
   )
 }

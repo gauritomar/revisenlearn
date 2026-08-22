@@ -182,3 +182,139 @@ def test_the_gemini_preview_links_to_the_note(page, app) -> None:
 
     page.get_by_test_id("page-screen").wait_for(state="visible")
     assert page.get_by_test_id("note-title").inner_text() == "Strings"
+
+
+def test_lesson_status_cycles_through_four_colours(page, app) -> None:
+    """"Click on its done to do button and it will be highlighted in green and
+    in-progress should be yellow, red if i need to return to it." Red is
+    `revisit`, which is not the same as never having started."""
+    tree = _tree(app.base_url)
+    with httpx.Client(base_url=app.base_url, timeout=30) as c:
+        c.post("/api/lessons", json={"topic_id": tree["topic"]["id"],
+                                     "subtopic_id": tree["subtopic"]["id"],
+                                     "name": "Roman numerals"})
+    page.reload(wait_until="networkidle")
+    page.get_by_test_id("roadmap").wait_for(state="visible")
+
+    lesson_id = app.query("SELECT id FROM lessons")[0][0]
+    row = page.get_by_test_id(f"lesson-{lesson_id}")
+    row.wait_for(state="visible")
+
+    for expected in ("in_progress", "done", "revisit", "not_started"):
+        page.get_by_test_id(f"lesson-status-{lesson_id}").click()
+        page.wait_for_function(
+            f"() => document.querySelector('[data-testid=lesson-{lesson_id}]')"
+            f"?.dataset.status === '{expected}'",
+            timeout=8_000,
+        )
+    assert app.query("SELECT status FROM lessons")[0][0] == "not_started"
+
+
+def test_a_subject_collapses_in_the_roadmap(page, app) -> None:
+    tree = _tree(app.base_url)
+    page.reload(wait_until="networkidle")
+    page.get_by_test_id("roadmap").wait_for(state="visible")
+    page.get_by_test_id(f"roadmap-topic-{tree['topic']['id']}").wait_for(state="visible")
+
+    page.get_by_test_id(f"roadmap-collapse-subject-{tree['subject']['id']}").click()
+    page.wait_for_function(
+        f"() => !document.querySelector('[data-testid=\"roadmap-topic-{tree['topic']['id']}\"]')",
+        timeout=8_000,
+    )
+
+    # …and it stays folded across a reload.
+    page.reload(wait_until="networkidle")
+    page.get_by_test_id("roadmap").wait_for(state="visible")
+    page.wait_for_timeout(500)
+    assert page.get_by_test_id(f"roadmap-topic-{tree['topic']['id']}").count() == 0
+
+
+def test_a_page_carries_the_link_it_came_from(page, app) -> None:
+    """"I should be able to link certain articles or youtube lectures or
+    leetcode questions … and that link should be displayed when its page is
+    open." It belongs to the page, not to the note."""
+    tree = _tree(app.base_url)
+    page.reload(wait_until="networkidle")
+    page.get_by_test_id(f"roadmap-open-subtopic-{tree['subtopic']['id']}").click()
+    page.get_by_test_id("page-screen").wait_for(state="visible")
+
+    page.get_by_test_id("page-link-add").click()
+    page.get_by_test_id("page-link-input").fill("https://www.codechef.com/roadmap/strings")
+    page.keyboard.press("Enter")
+
+    link = page.get_by_test_id("page-link")
+    link.wait_for(state="visible", timeout=8_000)
+    assert link.get_attribute("href") == "https://www.codechef.com/roadmap/strings"
+    assert app.query("SELECT url FROM subtopics")[0][0] == \
+        "https://www.codechef.com/roadmap/strings"
+
+    # It is the page's, not the note's: nothing extra to send to the model.
+    assert app.query(
+        "SELECT count(*) FROM note_blocks WHERE text LIKE '%codechef%'"
+    )[0][0] == 0
+
+
+def test_a_section_can_be_added_without_scrolling(page, app) -> None:
+    """"I want to be able to add blocks at a time as my notes are kind of
+    random as i come across a concept i just add it.\""""
+    tree = _tree(app.base_url)
+    page.reload(wait_until="networkidle")
+    page.get_by_test_id(f"roadmap-open-subtopic-{tree['subtopic']['id']}").click()
+    page.get_by_test_id("page-screen").wait_for(state="visible")
+    # Wait for the stored note to be in the editor before adding to it.
+    page.wait_for_function(
+        "() => document.querySelector('[data-testid=note-editor]')"
+        "?.innerText.includes('ord()')",
+        timeout=10_000,
+    )
+
+    page.get_by_test_id("add-section-top").click()
+    # The section lands, and the cursor moves into its heading, on the next
+    # render — type into the button and the keystrokes go nowhere.
+    # Tiptap moves the caret into the new heading a tick after the insert, so
+    # wait for the editor to actually hold it rather than typing into the gap.
+    page.wait_for_function(
+        "() => document.activeElement?.dataset?.testid === 'note-editor'"
+        " && !!document.querySelector('[data-testid=note-editor] h3')",
+        timeout=8_000,
+    )
+    page.keyboard.type("Sliding window")
+    page.wait_for_function(
+        "() => document.querySelector('[data-testid=note-editor] h3')"
+        "?.textContent === 'Sliding window'",
+        timeout=8_000,
+    )
+    # A heading with bullets under it, at the top where the newest thing goes.
+    html = page.get_by_test_id("note-editor").inner_html()
+    assert html.index("<h3>") < html.index("ord()")
+
+
+def test_the_note_is_twelve_point_sans(page, app) -> None:
+    """"Make the text small like 12 pt and change the font to something else i
+    like the google docs/notion standard font.\""""
+    tree = _tree(app.base_url)
+    page.reload(wait_until="networkidle")
+    page.get_by_test_id(f"roadmap-open-subtopic-{tree['subtopic']['id']}").click()
+    page.get_by_test_id("note-editor").wait_for(state="visible")
+
+    style = page.evaluate(
+        """() => {
+          const s = getComputedStyle(document.querySelector('[data-testid=note-editor]'))
+          return {size: parseFloat(s.fontSize), family: s.fontFamily.toLowerCase()}
+        }"""
+    )
+    assert style["size"] == 15          # 12pt at 96dpi
+    assert "serif" not in style["family"].replace("sans-serif", "")
+
+
+def test_the_roadmap_survives_a_narrow_window(page, app) -> None:
+    """"Even when i reduce the size of the window width, it should still have
+    atleast roadmap on the header as for dashboard i can just click on Revise
+    & Learn.\""""
+    _tree(app.base_url)
+    page.reload(wait_until="networkidle")
+    page.set_viewport_size({"width": 700, "height": 900})
+    page.wait_for_timeout(300)
+
+    assert page.get_by_test_id("nav-roadmap").is_visible()
+    assert page.get_by_test_id("header-home").is_visible()

@@ -334,9 +334,20 @@ def calendar_month(month: str,
                    session: Session = Depends(get_session)) -> CalendarMonth:
     """One month of writing activity for the §14 calendar.
 
-    ``month`` is ``YYYY-MM``. Each day that has notes comes back with a count
-    and the distinct topics written about, which the calendar renders as pills.
+    ``month`` is ``YYYY-MM``. A day appears when there is writing on it, which
+    is the union of two things:
+
+      * a note *dated* that day which has real content — this is what a
+        backdated or resource note means;
+      * real blocks created or edited that day — because a page's note is
+        continuous now, so its `study_date` is the day the page was first
+        opened and never moves while the writing keeps coming.
+
+    "Real" excludes empty notes and the app's own furniture: opening a page
+    creates its note, so "a note exists" stopped meaning "work happened here".
+    Notes on deleted pages are left out entirely.
     """
+    from ..tree import has_real_content, on_a_live_page
     try:
         year_s, month_s = month.split("-")
         year, month_no = int(year_s), int(month_s)
@@ -347,32 +358,51 @@ def calendar_month(month: str,
     last = date_cls(year + (month_no == 12), (month_no % 12) + 1, 1)
 
     rows = session.exec(
-        select(Note, Topic, Subject)
+        select(NoteBlock, Note, Topic, Subject)
+        .join(Note, Note.id == NoteBlock.note_id)
         .join(Topic, Topic.id == Note.topic_id, isouter=True)
         .join(Subject, Subject.id == Note.subject_id, isouter=True)
-        .where(
-            Note.deleted_at.is_(None),
-            Note.study_date >= first,
-            Note.study_date < last,
-        )
-        .order_by(Note.study_date)
+        .where(NoteBlock.deleted_at.is_(None), Note.deleted_at.is_(None))
     ).all()
 
+    live: dict[int, bool] = {}
     by_day: dict[str, dict] = {}
-    for note, topic, subject in rows:
-        key = note.study_date.isoformat()
-        day = by_day.setdefault(key, {"date": note.study_date, "note_count": 0,
-                                      "topics": [], "_seen": set()})
-        day["note_count"] += 1
-        if topic is not None and topic.id not in day["_seen"]:
-            day["_seen"].add(topic.id)
-            day["topics"].append(
-                CalendarPill(
-                    topic_id=topic.id,
-                    name=topic.name,
-                    colour=(subject.colour if subject else None),
+    for block, note, topic, subject in rows:
+        if not has_real_content(block):
+            continue
+        if note.id not in live:
+            live[note.id] = on_a_live_page(session, note)
+        if not live[note.id]:
+            continue
+
+        # The user's day, not UTC's: a block written at 00:30 in Delhi belongs
+        # to that morning, not to the previous afternoon in London.
+        stamp = block.updated_at or block.created_at
+        if stamp is None:
+            continue
+        if stamp.tzinfo is None:
+            stamp = stamp.replace(tzinfo=timezone.utc)
+        when = stamp.astimezone().date()
+
+        for day_date in {when, note.study_date}:
+            if not (first <= day_date < last):
+                continue
+            key = day_date.isoformat()
+            day = by_day.setdefault(key, {"date": day_date, "note_count": 0,
+                                          "topics": [], "_seen": set(),
+                                          "_notes": set()})
+            if note.id not in day["_notes"]:
+                day["_notes"].add(note.id)
+                day["note_count"] += 1
+            if topic is not None and topic.id not in day["_seen"]:
+                day["_seen"].add(topic.id)
+                day["topics"].append(
+                    CalendarPill(
+                        topic_id=topic.id,
+                        name=topic.name,
+                        colour=(subject.colour if subject else None),
+                    )
                 )
-            )
 
     days = [
         CalendarDay(date=d["date"], note_count=d["note_count"], topics=d["topics"])

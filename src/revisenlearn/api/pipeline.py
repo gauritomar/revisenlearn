@@ -35,6 +35,10 @@ class JobOut(BaseModel):
     edges_proposed: int
     mcqs_generated: int
     error_text: str | None = None
+    #: credits | auth | request | rate_limit, when the provider said something
+    #: actionable. NULL means retrying is as good a guess as any.
+    error_reason: str | None = None
+    error_action: str | None = None
     retry_count: int
     created_at: datetime
     started_at: datetime | None = None

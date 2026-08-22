@@ -9,6 +9,17 @@ import { api, type PipelineJob } from '../lib/api'
  */
 const ACTIVE = new Set(['queued', 'running'])
 
+/** A failure the provider explained, said back in the user's terms. */
+const FAILURE_HEADLINE: Record<string, string> = {
+  credits: 'Gemini has no credits left',
+  auth: 'Gemini rejected the API key',
+  request: 'Gemini rejected the request',
+  rate_limit: 'Gemini is rate limiting this key',
+}
+
+/** Everything else is worth one more press; these are not. */
+const RETRYABLE = new Set(['', 'rate_limit', 'provider'])
+
 export function Jobs() {
   const [openId, setOpenId] = useState<number | null>(null)
   const { data: jobs = [], isLoading } = useQuery({
@@ -142,26 +153,52 @@ function JobDetail({ jobId }: { jobId: number }) {
       {job.error_text && (
         <div className="mt-3 rounded-md border border-stale/40 bg-stale-wash p-2.5">
           <p className="text-[0.75rem] font-medium text-ink">
-            Failed at {job.stage ?? 'an early stage'}
+            {FAILURE_HEADLINE[job.error_reason ?? ''] ??
+              `Failed at ${job.stage ?? 'an early stage'}`}
           </p>
-          <p
-            data-testid="job-error"
-            className="mt-1 max-h-32 overflow-y-auto whitespace-pre-wrap break-all font-mono text-[0.6875rem] text-ink-soft"
-          >
-            {job.error_text}
-          </p>
-          <button
-            type="button"
-            onClick={() => retry.mutate()}
-            disabled={retry.isPending}
-            data-testid="job-retry"
-            className="mt-2 rounded bg-accent px-2.5 py-1 text-[0.75rem] font-medium text-white transition hover:bg-accent-deep disabled:opacity-50"
-          >
-            {retry.isPending ? 'Retrying…' : 'Retry'}
-          </button>
-          <p className="mt-1.5 text-[0.6875rem] text-muted">
-            A retry re-runs extraction, which costs tokens again.
-          </p>
+
+          {/* When the provider said something actionable, that is the message
+              — not the stack of quoted JSON underneath it. */}
+          {job.error_action && (
+            <p data-testid="job-action" className="mt-1 text-[0.75rem] leading-relaxed text-ink-soft">
+              {job.error_action}
+            </p>
+          )}
+
+          <details className="mt-1.5">
+            <summary className="cursor-pointer text-[0.6875rem] text-muted">
+              What the provider said
+            </summary>
+            <p
+              data-testid="job-error"
+              className="mt-1 max-h-32 overflow-y-auto whitespace-pre-wrap break-all font-mono text-[0.6875rem] text-ink-soft"
+            >
+              {job.error_text}
+            </p>
+          </details>
+
+          {/* Retrying a depleted account or a malformed request just spends
+              the same way again, so the button is not offered. */}
+          {RETRYABLE.has(job.error_reason ?? '') ? (
+            <>
+              <button
+                type="button"
+                onClick={() => retry.mutate()}
+                disabled={retry.isPending}
+                data-testid="job-retry"
+                className="mt-2 rounded bg-accent px-2.5 py-1 text-[0.75rem] font-medium text-white transition hover:bg-accent-deep disabled:opacity-50"
+              >
+                {retry.isPending ? 'Retrying…' : 'Retry'}
+              </button>
+              <p className="mt-1.5 text-[0.6875rem] text-muted">
+                A retry re-runs extraction, which costs tokens again.
+              </p>
+            </>
+          ) : (
+            <p data-testid="job-no-retry" className="mt-2 text-[0.6875rem] text-muted">
+              Retrying would fail the same way, so it is not offered here.
+            </p>
+          )}
         </div>
       )}
 

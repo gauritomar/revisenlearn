@@ -11,6 +11,9 @@ type UIState = {
   expandedTopics: number[]
   expandedSubtopics: number[]
   expandedLessons: number[]
+  /** Roadmap rows the user folded away, keyed "kind-id". Collapsed rather
+   *  than expanded, so a new subject starts open. */
+  collapsedRows: string[]
   activeSubtopicId: number | null
   /** Consolidated addendum §3 — the lesson whose note is open. */
   activeLessonId: number | null
@@ -37,6 +40,7 @@ type UIState = {
   toggleTopic: (id: number) => void
   toggleSubtopic: (id: number) => void
   toggleLesson: (id: number) => void
+  toggleRow: (key: string) => void
   openSubtopic: (subtopicId: number, noteId: number) => void
   openLesson: (lessonId: number, noteId: number) => void
   openPage: (kind: TreeKind, id: number) => void
@@ -74,6 +78,7 @@ export const useUI = create<UIState>()(
       expandedTopics: [],
       expandedSubtopics: [],
       expandedLessons: [],
+      collapsedRows: [],
       activeSubtopicId: null,
       activeLessonId: null,
       activePage: null,
@@ -94,6 +99,12 @@ export const useUI = create<UIState>()(
       toggleTopic: (id) => set((s) => ({ expandedTopics: toggle(s.expandedTopics, id) })),
       toggleSubtopic: (id) => set((s) => ({ expandedSubtopics: toggle(s.expandedSubtopics, id) })),
       toggleLesson: (id) => set((s) => ({ expandedLessons: toggle(s.expandedLessons, id) })),
+      toggleRow: (key) =>
+        set((s) => ({
+          collapsedRows: s.collapsedRows.includes(key)
+            ? s.collapsedRows.filter((k) => k !== key)
+            : [...s.collapsedRows, key],
+        })),
       openLesson: (lessonId, noteId) =>
         set({
           activeLessonId: lessonId,
@@ -191,6 +202,7 @@ export const useUI = create<UIState>()(
         expandedTopics: s.expandedTopics,
         expandedSubtopics: s.expandedSubtopics,
         expandedLessons: s.expandedLessons,
+        collapsedRows: s.collapsedRows,
         activeSubtopicId: s.activeSubtopicId,
         activeLessonId: s.activeLessonId,
         activePage: s.activePage,

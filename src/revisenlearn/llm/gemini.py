@@ -21,7 +21,13 @@ from typing import Any, Sequence
 from pydantic import BaseModel, ValidationError
 
 from ..embeddings import get_embedder
-from .base import LLMError, LLMResult, SchemaValidationError, Usage
+from .base import (
+    LLMError,
+    LLMResult,
+    ProviderRefusedError,
+    SchemaValidationError,
+    Usage,
+)
 
 log = logging.getLogger(__name__)
 
@@ -86,7 +92,7 @@ class GeminiProvider:
         try:
             return self._get_client().interactions.create(**body)
         except Exception as exc:  # normalise every SDK failure
-            raise LLMError(f"Gemini call failed: {exc}") from exc
+            raise _classify(exc) from exc
 
     @staticmethod
     def _usage_of(interaction: Any) -> Usage:
@@ -133,13 +139,7 @@ class GeminiProvider:
         """Spec §11 — retry exactly once with the validation error appended,
         then fail with the raw response preserved."""
         started = time.monotonic()
-        response_format = {
-            "type": "json_schema",
-            "json_schema": {
-                "name": schema.__name__,
-                "schema": schema.model_json_schema(),
-            },
-        }
+        response_format = json_schema_for(schema)
 
         attempt_input = user_input
         last_error: str = ""
@@ -199,6 +199,95 @@ class GeminiProvider:
     def embed(self, texts: Sequence[str]):
         """Embeddings are local (spec §2, §16) — never a Gemini call."""
         return get_embedder().embed(texts)
+
+
+def _classify(exc: Exception) -> LLMError:
+    """Turn an SDK exception into something the user can act on.
+
+    "Extraction failed: Gemini call failed: Error code: 429 …" with a Retry
+    button is the least useful thing this app could say when the real answer
+    is "your credits ran out". Each of these is matched on the provider's own
+    words rather than a status code alone, because the SDK does not expose one
+    consistently.
+    """
+    text = str(exc)
+    lowered = text.lower()
+
+    if "prepayment credits are depleted" in lowered or "billing" in lowered:
+        return ProviderRefusedError(
+            "Gemini has no credits left on this key.",
+            reason="credits",
+            action=("Top up the project at ai.studio/projects. Nothing was "
+                    "processed and nothing was charged for this attempt."),
+        )
+    if "api key" in lowered or "unauthenticated" in lowered or "401" in text or "403" in text:
+        return ProviderRefusedError(
+            "Gemini rejected the API key.",
+            reason="auth",
+            action=("Check the key in the Keychain, or re-import it with "
+                    "`python -m revisenlearn.credentials --import-to-keychain`."),
+        )
+    if "invalid_request" in lowered or "error code: 400" in lowered:
+        return ProviderRefusedError(
+            f"Gemini rejected the request: {text}",
+            reason="request",
+            action=("This is a bug in how the request is built, not something "
+                    "a retry fixes."),
+        )
+    if "429" in text or "rate" in lowered and "limit" in lowered:
+        return ProviderRefusedError(
+            "Gemini is rate limiting this key.",
+            reason="rate_limit",
+            action="Wait a minute and press Retry.",
+        )
+    return LLMError(f"Gemini call failed: {text}")
+
+
+#: JSON Schema keywords the Interactions API does not accept. Pydantic emits
+#: several of these for free; sending them is a 400.
+_UNSUPPORTED_KEYS = ("title", "default", "$defs", "additionalProperties",
+                     "discriminator", "examples")
+
+
+def json_schema_for(schema: type[BaseModel]) -> dict:
+    """The response format the Interactions API actually wants.
+
+    Not OpenAI's `{"type": "json_schema", "json_schema": {...}}` envelope —
+    that is a 400:
+
+        The value 'json_schema' is not supported for 'type' at
+        'response_format'. Supported values: … 'object' …
+
+    It wants the schema itself, whose top-level `type` is `object`. Pydantic
+    lifts nested models into `$defs` and points at them with `$ref`, which
+    this API does not resolve, so the references are inlined and the keywords
+    it rejects are stripped.
+    """
+    raw = schema.model_json_schema()
+    defs = raw.get("$defs", {})
+
+    def resolve(node, depth: int = 0):
+        if depth > 20:                       # a self-referential model
+            return {"type": "object"}
+        if isinstance(node, list):
+            return [resolve(item, depth + 1) for item in node]
+        if not isinstance(node, dict):
+            return node
+
+        ref = node.get("$ref")
+        if ref:
+            name = ref.rsplit("/", 1)[-1]
+            merged = {**defs.get(name, {}), **{k: v for k, v in node.items()
+                                               if k != "$ref"}}
+            return resolve(merged, depth + 1)
+
+        return {
+            key: resolve(value, depth + 1)
+            for key, value in node.items()
+            if key not in _UNSUPPORTED_KEYS
+        }
+
+    return resolve(raw)
 
 
 def _strip_fences(text: str) -> str:

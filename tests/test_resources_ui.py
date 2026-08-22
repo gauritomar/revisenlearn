@@ -37,18 +37,24 @@ def _branch(base_url: str) -> dict:
 
 
 def _dashboard(page) -> None:
-    """Consolidated addendum §7 — the app opens on Calendar now. Everything
-    below is about the dashboard's resource surfaces, so each test says so
-    rather than relying on where the app happens to land."""
+    """The app opens on the Roadmap; the Dashboard is one click away on the
+    wordmark."""
     page.get_by_test_id("header-home").click()
     page.get_by_test_id("dashboard").wait_for(state="visible")
+
+
+def _resources(page) -> None:
+    """Adding a resource lives in Resources, not on the Dashboard — the
+    Dashboard reports, it does not create."""
+    page.get_by_test_id("nav-resources").click()
+    page.get_by_test_id("resource-list").wait_for(state="visible")
 
 
 
 def test_add_a_resource_by_pasting_a_link(page, app) -> None:
     """§5.1 — a single input, and Enter saves it."""
-    _dashboard(page)
-    page.get_by_test_id("dash-add-resource").click()
+    _resources(page)
+    page.get_by_test_id("add-resource").click()
     page.get_by_test_id("resource-add").wait_for(state="visible")
 
     page.get_by_test_id("resource-input").fill("https://example.com/rag-course")
@@ -66,8 +72,8 @@ def test_add_a_resource_by_pasting_a_link(page, app) -> None:
 
 
 def test_add_a_resource_by_typing_a_title(page, app) -> None:
-    _dashboard(page)
-    page.get_by_test_id("dash-add-resource").click()
+    _resources(page)
+    page.get_by_test_id("add-resource").click()
     page.get_by_test_id("resource-input").fill("Work through CLRS chapter 4")
     page.get_by_test_id("resource-add-submit").click()
     page.get_by_test_id("resource-add").wait_for(state="detached")
@@ -79,8 +85,8 @@ def test_add_a_resource_by_typing_a_title(page, app) -> None:
 
 def test_enter_submits_the_quick_add(page, app) -> None:
     """Five seconds means not reaching for the mouse."""
-    _dashboard(page)
-    page.get_by_test_id("dash-add-resource").click()
+    _resources(page)
+    page.get_by_test_id("add-resource").click()
     page.get_by_test_id("resource-input").fill("Skim the FSRS paper")
     page.keyboard.press("Enter")
     page.get_by_test_id("resource-add").wait_for(state="detached")
@@ -92,10 +98,10 @@ def test_quick_add_placement_defaults_to_last_used(page, app) -> None:
     """§5.1 — pickers default to the last-used values."""
     branch = _branch(app.base_url)
     page.reload(wait_until="networkidle")
-    _dashboard(page)
+    _resources(page)
 
     # First add: choose a placement explicitly.
-    page.get_by_test_id("dash-add-resource").click()
+    page.get_by_test_id("add-resource").click()
     page.get_by_test_id("resource-input").fill("First video")
     page.get_by_test_id("resource-subject").select_option(str(branch["subject"]["id"]))
     page.get_by_test_id("resource-topic").select_option(str(branch["topic"]["id"]))
@@ -104,7 +110,7 @@ def test_quick_add_placement_defaults_to_last_used(page, app) -> None:
     page.get_by_test_id("resource-add").wait_for(state="detached")
 
     # Second add: the pickers come back already filled in.
-    page.get_by_test_id("dash-add-resource").click()
+    page.get_by_test_id("add-resource").click()
     page.get_by_test_id("resource-add").wait_for(state="visible")
     assert page.get_by_test_id("resource-subject").input_value() == str(branch["subject"]["id"])
     assert page.get_by_test_id("resource-subtopic").input_value() == str(branch["subtopic"]["id"])
@@ -125,9 +131,9 @@ def test_quick_add_placement_defaults_to_last_used(page, app) -> None:
 def test_the_topic_picker_is_gated_on_the_subject(page, app) -> None:
     _branch(app.base_url)
     page.reload(wait_until="networkidle")
-    _dashboard(page)
+    _resources(page)
 
-    page.get_by_test_id("dash-add-resource").click()
+    page.get_by_test_id("add-resource").click()
     page.get_by_test_id("resource-add").wait_for(state="visible")
 
     assert page.get_by_test_id("resource-topic").is_disabled()

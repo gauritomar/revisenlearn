@@ -46,16 +46,54 @@ def _open_calendar(page) -> None:
     page.get_by_test_id("dash-calendar").wait_for(state="visible")
 
 
-def _note_on(client, subtopic_id: int, day: dt.date) -> dict:
-    return client.post(
+def _note_on(client, subtopic_id: int, day: dt.date, text: str = "Something learned") -> dict:
+    """A note *with writing in it*.
+
+    The calendar shows days work happened, and since opening a page creates
+    its note, an empty note is a visit rather than work — so the fixture has
+    to write something for the day to count.
+    """
+    note = client.post(
         "/api/notes",
         json={"subtopic_id": subtopic_id, "study_date": day.isoformat()},
     ).json()
+    if text:
+        client.put(f"/api/notes/{note['id']}/blocks", json={"blocks": [
+            {"id": None, "position": 0, "block_type": "paragraph", "text": text},
+        ]})
+    return note
 
 
 # --------------------------------------------------------------------------
 # API
 # --------------------------------------------------------------------------
+
+def test_an_empty_note_is_not_a_day_of_work(client) -> None:
+    """Opening a page creates its note. "If a change has been made to specific
+    notes where proper blocks have been added only then it should be added to
+    the calendar."
+    """
+    tree = _tree(client)
+    _note_on(client, tree["hybrid"]["id"], TODAY, text="")
+
+    assert client.get(f"/api/notes/calendar/{THIS_MONTH}").json()["days"] == []
+
+    # Write something and the day appears.
+    _note_on(client, tree["judge"]["id"], TODAY)
+    days = client.get(f"/api/notes/calendar/{THIS_MONTH}").json()["days"]
+    assert [d["date"] for d in days] == [TODAY_ISO]
+
+
+def test_a_note_on_a_deleted_page_leaves_the_calendar(client) -> None:
+    """Deleting a subtopic does not delete its notes (§1.7), but they are
+    gone from the user's point of view — and so from the calendar."""
+    tree = _tree(client)
+    _note_on(client, tree["hybrid"]["id"], TODAY)
+    assert client.get(f"/api/notes/calendar/{THIS_MONTH}").json()["days"]
+
+    client.delete(f"/api/subtopics/{tree['hybrid']['id']}")
+    assert client.get(f"/api/notes/calendar/{THIS_MONTH}").json()["days"] == []
+
 
 def test_empty_month_returns_no_days(client) -> None:
     body = client.get(f"/api/notes/calendar/{THIS_MONTH}").json()
@@ -142,7 +180,12 @@ def test_a_resource_note_appears_on_the_calendar(client) -> None:
         "/api/resources",
         json={"title": "RAG video", "subtopic_id": tree["hybrid"]["id"]},
     ).json()
-    client.post("/api/notes/ensure", json={"resource_id": resource["id"]})
+    note = client.post("/api/notes/ensure",
+                       json={"resource_id": resource["id"]}).json()
+    client.put(f"/api/notes/{note['id']}/blocks", json={"blocks": [
+        {"id": None, "position": 0, "block_type": "paragraph",
+         "text": "Watched the first half"},
+    ]})
 
     day = client.get(f"/api/notes/calendar/{THIS_MONTH}").json()["days"][0]
     assert day["note_count"] == 1

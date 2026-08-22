@@ -64,8 +64,15 @@ def progress(session: Session = Depends(get_session)) -> dict:
     mcq_attempts = session.exec(select(MCQAttempt)).all()
     prose_attempts = session.exec(select(QuestionAttempt)).all()
 
+    # The dashboard's "Due to review" was a Phase 7 placeholder long after
+    # Phase 7 shipped; the number exists, so it is reported.
+    from ..revision import dashboard as revision_dashboard
+
+    due = revision_dashboard(session)
+
     return {
         "concepts": len(concepts),
+        "due_today": due.get("due_count", 0),
         "stale_concepts": sum(1 for c in concepts if c.status == "stale"),
         "reviews": len(logs),
         "mcq_answers": len(mcq_attempts),

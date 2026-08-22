@@ -41,6 +41,8 @@ class LessonCreate(BaseModel):
     name: str = Field(min_length=1, max_length=300)
     position: int | None = None
     status: str = "not_started"
+    #: The article, lecture or problem this lesson came from.
+    url: str | None = None
 
 
 class LessonUpdate(BaseModel):
@@ -48,6 +50,7 @@ class LessonUpdate(BaseModel):
     status: str | None = None
     position: int | None = None
     subtopic_id: int | None = None
+    url: str | None = None
 
 
 class ItemCreate(BaseModel):
@@ -134,6 +137,7 @@ def create_lesson(payload: LessonCreate,
         subtopic_id=payload.subtopic_id,
         name=payload.name.strip(),
         status=payload.status,
+        url=payload.url,
         position=(payload.position if payload.position is not None
                   else _next_position(session, Lesson,
                                       topic_id=payload.topic_id,

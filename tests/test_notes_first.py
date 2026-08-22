@@ -651,3 +651,60 @@ def test_a_todo_can_be_deleted(client) -> None:
 
     assert client.delete(f"/api/todos/{todo['id']}").status_code == 204
     assert all(t["id"] != todo["id"] for t in client.get("/api/todos").json())
+
+
+# --------------------------------------------------------------------------
+# What gets sent, and what it costs
+# --------------------------------------------------------------------------
+
+def test_blocks_on_a_deleted_page_are_not_sent(client) -> None:
+    """Nothing is hard-deleted (§1.7), so a deleted subtopic keeps its notes.
+    They are gone from the user's point of view, and must be gone from the
+    bill too: "deleted notes etc should not appear in my send to gemini …
+    it should be revised with exactly what i have right now."
+    """
+    tree = _tree(client)
+    note = client.post("/api/notes/ensure",
+                       json={"subtopic_id": tree["subtopic"]["id"]}).json()
+    _write(client, note["id"], ["Fixed-size chunking splits on a token budget"])
+    assert client.get("/api/pipeline/pending").json()["unprocessed_blocks"] == 1
+
+    client.delete(f"/api/subtopics/{tree['subtopic']['id']}")
+
+    assert client.get("/api/pipeline/pending").json()["unprocessed_blocks"] == 0
+    # …and the note itself is untouched, because deletes are soft.
+    assert len(client.get(f"/api/notes/{note['id']}").json()["blocks"]) == 1
+
+
+def test_deleting_a_subject_takes_its_whole_subtree_off_the_bill(client) -> None:
+    tree = _tree(client)
+    note = client.post("/api/notes/ensure",
+                       json={"lesson_id": tree["lesson"]["id"]}).json()
+    _write(client, note["id"], ["Semantic chunking splits on meaning"])
+    assert client.get("/api/pipeline/pending").json()["unprocessed_blocks"] == 1
+
+    client.delete(f"/api/subjects/{tree['subject']['id']}")
+    assert client.get("/api/pipeline/pending").json()["unprocessed_blocks"] == 0
+
+
+def test_a_page_link_is_not_note_content(client) -> None:
+    """The link belongs to the page, so it survives the note being rewritten
+    and is never sent to the model as writing."""
+    tree = _tree(client)
+    client.patch(f"/api/subtopics/{tree['subtopic']['id']}",
+                 json={"url": "https://codechef.com/roadmap/strings"})
+
+    page = client.get(f"/api/pages/subtopic/{tree['subtopic']['id']}").json()
+    assert page["url"] == "https://codechef.com/roadmap/strings"
+    assert client.get("/api/pipeline/pending").json()["unprocessed_blocks"] == 0
+
+
+def test_a_lesson_can_be_marked_for_revisiting(client) -> None:
+    """"Red if i need to return to it" — which is not the same as never
+    having started, so it is a status of its own."""
+    tree = _tree(client)
+    updated = client.patch(f"/api/lessons/{tree['lesson']['id']}",
+                           json={"status": "revisit"}).json()
+    assert updated["status"] == "revisit"
+    assert client.patch(f"/api/lessons/{tree['lesson']['id']}",
+                        json={"status": "banana"}).status_code == 400

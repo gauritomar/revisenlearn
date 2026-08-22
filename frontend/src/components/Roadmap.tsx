@@ -5,6 +5,47 @@ import { api, type RoadmapLesson, type RoadmapSubject, type TreeKind } from '../
 import { useRefreshEverything } from '../lib/refresh'
 import { useUI } from '../store/ui'
 
+/** Lesson status, in the user's words: "click on its done to do button and it
+ *  will be highlighted in green and in-progress should be yellow, red if i
+ *  need to return to it."
+ *
+ *  `revisit` is the red one, and it is a different thing from never having
+ *  started: it means the work was done and did not stick. Clicking cycles
+ *  through all four, so one control covers the whole state. */
+const STATUS_CYCLE: Record<string, string> = {
+  not_started: 'in_progress',
+  in_progress: 'done',
+  done: 'revisit',
+  revisit: 'not_started',
+}
+
+const STATUS_STYLE: Record<string, { box: string; row: string; label: string }> = {
+  not_started: {
+    box: 'border-line text-transparent hover:border-faint',
+    row: '',
+    label: 'not started',
+  },
+  in_progress: {
+    box: 'border-amber-500 bg-amber-100 text-amber-700',
+    row: 'bg-amber-50/60',
+    label: 'in progress',
+  },
+  done: {
+    box: 'border-emerald-600 bg-emerald-600 text-white',
+    row: 'bg-emerald-50/60',
+    label: 'done',
+  },
+  revisit: {
+    box: 'border-rose-500 bg-rose-100 text-rose-700',
+    row: 'bg-rose-50/60',
+    label: 'come back to this',
+  },
+}
+
+const STATUS_MARK: Record<string, string> = {
+  not_started: '·', in_progress: '–', done: '✓', revisit: '!',
+}
+
 /** Roadmap — the whole curriculum, and the way into every note.
  *
  *  "Let's keep just roadmap as a way to add notes … this is now the
@@ -67,8 +108,8 @@ export function Roadmap() {
         </p>
       ) : (
         <div className="mt-5 space-y-4">
-          {data?.subjects.map((subject) => (
-            <SubjectBlock key={subject.id} subject={subject} />
+          {data?.subjects.map((subject, i) => (
+            <SubjectBlock key={subject.id} subject={subject} index={i} />
           ))}
         </div>
       )}
@@ -231,9 +272,9 @@ function Bar({ pct }: { pct: number | null }) {
   )
 }
 
-/** One row: open it by name, add inside it, delete it. */
+/** One row: collapse it, open it by name, add inside it, delete it, drag it. */
 function PageRow({ kind, id, name, pct, level, addLabel, onAdd, onDeleted,
-                  trailing }: {
+                  trailing, collapsed, onToggle, drag }: {
   kind: TreeKind
   id: number
   name: string
@@ -243,13 +284,38 @@ function PageRow({ kind, id, name, pct, level, addLabel, onAdd, onDeleted,
   onAdd?: () => void
   onDeleted: () => void | Promise<void>
   trailing?: React.ReactNode
+  collapsed?: boolean
+  onToggle?: () => void
+  drag?: DragHandlers
 }) {
   const openPage = useUI((s) => s.openPage)
   const size = ['text-[0.9375rem] font-semibold', 'text-[0.875rem] font-medium',
                 'text-[0.8125rem]', 'text-[0.8125rem]'][level]
 
   return (
-    <div className="group flex items-center gap-2 rounded-md px-1 py-0.5 transition hover:bg-paper">
+    <div
+      {...(drag?.props ?? {})}
+      className={[
+        'group flex items-center gap-2 rounded-md px-1 py-0.5 transition hover:bg-paper',
+        drag?.over ? 'ring-1 ring-accent' : '',
+      ].join(' ')}
+    >
+      {onToggle && (
+        <button
+          type="button"
+          onClick={onToggle}
+          data-testid={`roadmap-collapse-${kind}-${id}`}
+          aria-label={`${collapsed ? 'Expand' : 'Collapse'} ${name}`}
+          aria-expanded={!collapsed}
+          className="grid size-4 shrink-0 place-items-center rounded text-faint transition hover:bg-sunken"
+        >
+          <svg width="9" height="9" viewBox="0 0 10 10" fill="none" aria-hidden="true"
+               className={`transition-transform ${collapsed ? '' : 'rotate-90'}`}>
+            <path d="m3.5 2 3.5 3-3.5 3" stroke="currentColor" strokeWidth="1.3"
+                  strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </button>
+      )}
       {trailing}
       <button
         type="button"
@@ -269,12 +335,70 @@ function PageRow({ kind, id, name, pct, level, addLabel, onAdd, onDeleted,
 }
 
 // --------------------------------------------------------------------------
+// Dragging
+//
+// The same POST /api/tree/move the sidebar uses: dropping a row on another of
+// its own kind puts it in that position, and the server renumbers the run.
+// --------------------------------------------------------------------------
+
+type Dragged = { kind: TreeKind; id: number; parentId: number | null; subtopicId: number | null }
+type DragHandlers = { props: Record<string, unknown>; over: boolean }
+
+const MIME = 'application/x-rnl-roadmap'
+
+function useDragRow(self: Dragged, index: number): DragHandlers {
+  const [over, setOver] = useState(false)
+  const refresh = useRefreshEverything()
+  const move = useMutation({ mutationFn: api.moveTreeItem, onSuccess: refresh })
+
+  return {
+    over,
+    props: {
+      draggable: true,
+      onDragStart: (e: React.DragEvent) => {
+        e.dataTransfer.setData(MIME, JSON.stringify(self))
+        e.dataTransfer.effectAllowed = 'move'
+      },
+      onDragOver: (e: React.DragEvent) => {
+        if (!e.dataTransfer.types.includes(MIME)) return
+        e.preventDefault()
+        setOver(true)
+      },
+      onDragLeave: () => setOver(false),
+      onDrop: (e: React.DragEvent) => {
+        setOver(false)
+        let drag: Dragged
+        try {
+          drag = JSON.parse(e.dataTransfer.getData(MIME)) as Dragged
+        } catch {
+          return
+        }
+        // Same kind only: a lesson dropped on a topic is ambiguous — into it,
+        // or before it? Reparenting has its own control ("Move to…").
+        if (drag.kind !== self.kind || drag.id === self.id) return
+        e.preventDefault()
+        e.stopPropagation()
+        move.mutate({
+          kind: drag.kind, id: drag.id,
+          parent_id: self.parentId, subtopic_id: self.subtopicId,
+          position: index,
+        })
+      },
+    },
+  }
+}
+
+// --------------------------------------------------------------------------
 // The tree
 // --------------------------------------------------------------------------
 
-function SubjectBlock({ subject }: { subject: RoadmapSubject }) {
+function SubjectBlock({ subject, index }: { subject: RoadmapSubject; index: number }) {
   const refresh = useRefreshEverything()
   const [adding, setAdding] = useState(false)
+  const collapsed = useUI((s) => s.collapsedRows.includes(`subject-${subject.id}`))
+  const toggleRow = useUI((s) => s.toggleRow)
+  const drag = useDragRow(
+    { kind: 'subject', id: subject.id, parentId: null, subtopicId: null }, index)
 
   const addTopic = useMutation({
     mutationFn: (name: string) => api.createTopic(subject.id, name),
@@ -290,6 +414,8 @@ function SubjectBlock({ subject }: { subject: RoadmapSubject }) {
         kind="subject" id={subject.id} name={subject.name} pct={subject.pct}
         level={0} addLabel="Topic" onAdd={() => setAdding(true)}
         onDeleted={refresh}
+        collapsed={collapsed} onToggle={() => toggleRow(`subject-${subject.id}`)}
+        drag={drag}
         trailing={
           <span className="size-2 shrink-0 rounded-full"
                 style={{ background: subject.colour ?? 'var(--color-faint)' }}
@@ -302,18 +428,29 @@ function SubjectBlock({ subject }: { subject: RoadmapSubject }) {
                    onSubmit={(name) => addTopic.mutate(name)} indent="ml-3" />
       )}
 
-      <div className="mt-3 space-y-3">
-        {subject.topics.map((topic) => (
-          <TopicBlock key={topic.id} topic={topic} />
-        ))}
-      </div>
+      {!collapsed && (
+        <div className="mt-3 space-y-3">
+          {subject.topics.map((topic, i) => (
+            <TopicBlock key={topic.id} topic={topic} index={i}
+                        subjectId={subject.id} />
+          ))}
+        </div>
+      )}
     </section>
   )
 }
 
-function TopicBlock({ topic }: { topic: RoadmapSubject['topics'][number] }) {
+function TopicBlock({ topic, index, subjectId }: {
+  topic: RoadmapSubject['topics'][number]
+  index: number
+  subjectId: number
+}) {
   const refresh = useRefreshEverything()
   const [adding, setAdding] = useState<'subtopic' | 'lesson' | null>(null)
+  const collapsed = useUI((s) => s.collapsedRows.includes(`topic-${topic.id}`))
+  const toggleRow = useUI((s) => s.toggleRow)
+  const drag = useDragRow(
+    { kind: 'topic', id: topic.id, parentId: subjectId, subtopicId: null }, index)
 
   const addSubtopic = useMutation({
     mutationFn: (name: string) => api.createSubtopic(topic.id, name),
@@ -330,6 +467,8 @@ function TopicBlock({ topic }: { topic: RoadmapSubject['topics'][number] }) {
         kind="topic" id={topic.id} name={topic.name} pct={topic.pct} level={1}
         addLabel="Subtopic" onAdd={() => setAdding('subtopic')}
         onDeleted={refresh}
+        collapsed={collapsed} onToggle={() => toggleRow(`topic-${topic.id}`)}
+        drag={drag}
       />
       {adding === 'subtopic' && (
         <NameInput placeholder="Subtopic name" testid={`new-subtopic-${topic.id}`}
@@ -338,21 +477,25 @@ function TopicBlock({ topic }: { topic: RoadmapSubject['topics'][number] }) {
       )}
 
       {/* Lessons hanging straight off the topic, with no subtopic. */}
-      {topic.lessons.length > 0 && (
+      {!collapsed && topic.lessons.length > 0 && (
         <ul className="ml-3 mt-1 space-y-0.5 border-l border-line-soft pl-2">
-          {topic.lessons.map((lesson) => (
-            <LessonRow key={lesson.id} lesson={lesson} />
+          {topic.lessons.map((lesson, i) => (
+            <LessonRow key={lesson.id} lesson={lesson} index={i}
+                       topicId={topic.id} subtopicId={null} />
           ))}
         </ul>
       )}
 
-      <div className="ml-3 mt-1 space-y-2 border-l border-line-soft pl-2">
-        {topic.subtopics.map((subtopic) => (
-          <SubtopicBlock key={subtopic.id} subtopic={subtopic} topicId={topic.id} />
-        ))}
-      </div>
+      {!collapsed && (
+        <div className="ml-3 mt-1 space-y-2 border-l border-line-soft pl-2">
+          {topic.subtopics.map((subtopic, i) => (
+            <SubtopicBlock key={subtopic.id} subtopic={subtopic}
+                           topicId={topic.id} index={i} />
+          ))}
+        </div>
+      )}
 
-      {adding === 'lesson' ? (
+      {collapsed ? null : adding === 'lesson' ? (
         <NameInput placeholder="Lesson name" testid={`new-lesson-topic-${topic.id}`}
                    onCancel={() => setAdding(null)}
                    onSubmit={(name) => addLesson.mutate(name)} indent="ml-5" />
@@ -370,12 +513,17 @@ function TopicBlock({ topic }: { topic: RoadmapSubject['topics'][number] }) {
   )
 }
 
-function SubtopicBlock({ subtopic, topicId }: {
+function SubtopicBlock({ subtopic, topicId, index }: {
   subtopic: RoadmapSubject['topics'][number]['subtopics'][number]
   topicId: number
+  index: number
 }) {
   const refresh = useRefreshEverything()
   const [adding, setAdding] = useState(false)
+  const collapsed = useUI((s) => s.collapsedRows.includes(`subtopic-${subtopic.id}`))
+  const toggleRow = useUI((s) => s.toggleRow)
+  const drag = useDragRow(
+    { kind: 'subtopic', id: subtopic.id, parentId: topicId, subtopicId: null }, index)
 
   const addLesson = useMutation({
     mutationFn: (name: string) =>
@@ -389,12 +537,17 @@ function SubtopicBlock({ subtopic, topicId }: {
         kind="subtopic" id={subtopic.id} name={subtopic.name} pct={subtopic.pct}
         level={2} addLabel="Lesson" onAdd={() => setAdding(true)}
         onDeleted={refresh}
+        collapsed={collapsed}
+        onToggle={subtopic.lessons.length > 0
+          ? () => toggleRow(`subtopic-${subtopic.id}`) : undefined}
+        drag={drag}
       />
 
-      {subtopic.lessons.length > 0 && (
+      {!collapsed && subtopic.lessons.length > 0 && (
         <ul className="ml-3 mt-1 space-y-0.5">
-          {subtopic.lessons.map((lesson) => (
-            <LessonRow key={lesson.id} lesson={lesson} />
+          {subtopic.lessons.map((lesson, i) => (
+            <LessonRow key={lesson.id} lesson={lesson} index={i}
+                       topicId={topicId} subtopicId={subtopic.id} />
           ))}
         </ul>
       )}
@@ -409,11 +562,18 @@ function SubtopicBlock({ subtopic, topicId }: {
   )
 }
 
-function LessonRow({ lesson }: { lesson: RoadmapLesson }) {
+function LessonRow({ lesson, index, topicId, subtopicId }: {
+  lesson: RoadmapLesson
+  index: number
+  topicId: number
+  subtopicId: number | null
+}) {
   const qc = useQueryClient()
   const refresh = useRefreshEverything()
   const [open, setOpen] = useState(false)
   const openPage = useUI((s) => s.openPage)
+  const drag = useDragRow(
+    { kind: 'lesson', id: lesson.id, parentId: topicId, subtopicId }, index)
 
   const setStatus = useMutation({
     mutationFn: (status: string) => api.updateLesson(lesson.id, { status }),
@@ -427,27 +587,31 @@ function LessonRow({ lesson }: { lesson: RoadmapLesson }) {
     onSuccess: refresh,
   })
 
-  const next = { not_started: 'in_progress', in_progress: 'done',
-                 done: 'not_started' }[lesson.status] ?? 'not_started'
+  const next = STATUS_CYCLE[lesson.status] ?? 'in_progress'
+  const style = STATUS_STYLE[lesson.status] ?? STATUS_STYLE.not_started
 
   return (
     <li data-testid={`lesson-${lesson.id}`} data-status={lesson.status}>
-      <div className="group flex items-center gap-2 rounded-md px-1 py-0.5 transition hover:bg-paper">
+      <div
+        {...drag.props}
+        className={[
+          'group flex items-center gap-2 rounded-md px-1 py-0.5 transition',
+          style.row || 'hover:bg-paper',
+          drag.over ? 'ring-1 ring-accent' : '',
+        ].join(' ')}
+      >
         <button
           type="button"
           onClick={() => setStatus.mutate(next)}
           data-testid={`lesson-status-${lesson.id}`}
-          aria-label={`Mark ${lesson.name} ${next.replace('_', ' ')}`}
+          aria-label={`${lesson.name} is ${style.label} — mark ${(STATUS_STYLE[next] ?? STATUS_STYLE.not_started).label}`}
+          title={style.label}
           className={[
-            'grid size-4 shrink-0 place-items-center rounded border text-[0.5625rem] transition',
-            lesson.status === 'done'
-              ? 'border-accent bg-accent text-white'
-              : lesson.status === 'in_progress'
-                ? 'border-accent text-accent-deep'
-                : 'border-line text-transparent hover:border-faint',
+            'grid size-4 shrink-0 place-items-center rounded border text-[0.5625rem] font-semibold transition',
+            style.box,
           ].join(' ')}
         >
-          {lesson.status === 'done' ? '✓' : lesson.status === 'in_progress' ? '–' : '·'}
+          {STATUS_MARK[lesson.status] ?? '·'}
         </button>
 
         {lesson.items.length > 0 && (
@@ -663,14 +827,21 @@ export function Todos() {
             <li
               key={`${entry.kind}-${entry.id}`}
               data-testid={`entry-${entry.kind}-${entry.id}`}
-              className="group flex items-center gap-2.5 rounded-md px-2 py-1.5 odd:bg-paper"
+              data-done={entry.done ? 'true' : 'false'}
+              className={[
+                'group flex items-center gap-2.5 rounded-md px-2 py-1.5',
+                // Open is amber, finished is green — the same language the
+                // Roadmap uses for a lesson, so one glance reads the same way
+                // in both places.
+                entry.done ? 'bg-emerald-50/70' : 'bg-amber-50/60',
+              ].join(' ')}
             >
               <input
                 type="checkbox"
                 checked={entry.done}
                 onChange={() => toggle.mutate(entry)}
                 aria-label={entry.title}
-                className="size-3.5 shrink-0 accent-[var(--color-accent)]"
+                className={`size-3.5 shrink-0 ${entry.done ? 'accent-emerald-600' : 'accent-amber-500'}`}
               />
               <span className={`min-w-0 flex-1 truncate text-[0.8125rem] ${entry.done ? 'text-faint line-through' : 'text-ink'}`}>
                 {entry.title}

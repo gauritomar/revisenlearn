@@ -67,6 +67,9 @@ class Subject(SQLModel, table=True):
     name: str = Field(index=True)
     colour: Optional[str] = None
     sort_order: int = 0
+    #: The article, lecture or problem set this page came from, shown at the
+    #: top of it so the source is one click away.
+    url: Optional[str] = None
     created_at: datetime = Field(default_factory=utcnow)
     deleted_at: Optional[datetime] = None
 
@@ -78,6 +81,9 @@ class Topic(SQLModel, table=True):
     subject_id: int = Field(foreign_key="subjects.id", index=True)
     name: str
     sort_order: int = 0
+    #: The article, lecture or problem set this page came from, shown at the
+    #: top of it so the source is one click away.
+    url: Optional[str] = None
     created_at: datetime = Field(default_factory=utcnow)
     deleted_at: Optional[datetime] = None
 
@@ -89,6 +95,9 @@ class Subtopic(SQLModel, table=True):
     topic_id: int = Field(foreign_key="topics.id", index=True)
     name: str
     sort_order: int = 0
+    #: The article, lecture or problem set this page came from, shown at the
+    #: top of it so the source is one click away.
+    url: Optional[str] = None
     created_at: datetime = Field(default_factory=utcnow)
     deleted_at: Optional[datetime] = None
 
@@ -496,6 +505,12 @@ class PipelineJob(SQLModel, table=True):
     edges_proposed: int = 0
     mcqs_generated: int = 0
     error_text: Optional[str] = Field(default=None, sa_column=Column(Text))
+    #: Why it failed, when the provider told us something actionable:
+    #: credits | auth | request | rate_limit. NULL means "no idea, retrying
+    #: is as good a guess as any".
+    error_reason: Optional[str] = None
+    #: What the user can do about it, in a sentence.
+    error_action: Optional[str] = Field(default=None, sa_column=Column(Text))
     retry_count: int = 0
     started_at: Optional[datetime] = None
     finished_at: Optional[datetime] = None
@@ -561,7 +576,9 @@ class Setting(SQLModel, table=True):
 # user deliberately writes a note.
 # --------------------------------------------------------------------------
 
-LESSON_STATUSES = ("not_started", "in_progress", "done")
+#: `revisit` is "I need to come back to this" — not the same as never having
+#: started, and the thing a red marker is for.
+LESSON_STATUSES = ("not_started", "in_progress", "done", "revisit")
 
 
 class Lesson(SQLModel, table=True):
@@ -580,7 +597,11 @@ class Lesson(SQLModel, table=True):
     name: str
     position: int = 0
     #: Directly settable by the user, not purely derived (addendum §4).
+    #: not_started | in_progress | done | revisit — the last one is "I need to
+    #: come back to this", which is a different thing from not having started.
     status: str = "not_started"
+    #: The article, lecture or problem set this lesson came from.
+    url: Optional[str] = None
     created_at: datetime = Field(default_factory=utcnow)
     updated_at: datetime = Field(default_factory=utcnow)
     deleted_at: Optional[datetime] = None

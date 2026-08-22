@@ -109,6 +109,7 @@ def _child(session: Session, kind: str, row, child_count: int) -> dict:
         "kind": kind,
         "id": row.id,
         "name": row.name,
+        "url": getattr(row, "url", None),
         "note_id": note_id,
         "block_count": _block_count(session, note_id),
         "child_count": child_count,
@@ -196,6 +197,10 @@ def get_page(kind: str, page_id: int,
         "name": row.name,
         "colour": getattr(row, "colour", None),
         "status": getattr(row, "status", None),
+        # "I should be able to link certain articles or youtube lectures or
+        # leetcode questions … and that link should be displayed when its page
+        # is open."
+        "url": getattr(row, "url", None),
         "note_id": note.id,
         "breadcrumb": _breadcrumb(session, kind, row),
         "children": children_of(session, kind, page_id),

@@ -8,6 +8,7 @@ export type LessonBrief = {
   name: string
   status: string
   position: number
+  url: string | null
   checklist_total: number
   checklist_done: number
 }
@@ -16,6 +17,7 @@ export type Subtopic = {
   topic_id: number
   name: string
   sort_order: number
+  url: string | null
   lessons: LessonBrief[]
 }
 export type Topic = {
@@ -23,10 +25,18 @@ export type Topic = {
   subject_id: number
   name: string
   sort_order: number
+  url: string | null
   subtopics: Subtopic[]
   lessons: LessonBrief[]
 }
-export type Subject = { id: number; name: string; colour: string | null; sort_order: number; topics: Topic[] }
+export type Subject = {
+  id: number
+  name: string
+  colour: string | null
+  sort_order: number
+  url: string | null
+  topics: Topic[]
+}
 
 export type TreeKind = 'subject' | 'topic' | 'subtopic' | 'lesson'
 
@@ -36,6 +46,7 @@ export type PageChild = {
   kind: TreeKind
   id: number
   name: string
+  url: string | null
   note_id: number | null
   block_count: number
   child_count: number
@@ -47,6 +58,7 @@ export type PageDetail = {
   name: string
   colour: string | null
   status: string | null
+  url: string | null
   note_id: number
   breadcrumb: PageCrumb[]
   children: PageChild[]
@@ -177,6 +189,8 @@ export type PipelineJob = {
   stage: string | null
   subject_id: number | null
   block_count: number
+  error_reason: string | null
+  error_action: string | null
   concepts_created: number
   concepts_updated: number
   concepts_merged: number
@@ -471,6 +485,7 @@ export type UsageConcept = {
 }
 export type Progress = {
   concepts: number
+  due_today: number
   stale_concepts: number
   reviews: number
   mcq_answers: number
@@ -532,6 +547,16 @@ export const api = {
     request<Topic>('/api/topics', { method: 'POST', body: JSON.stringify({ subject_id, name }) }),
   createSubtopic: (topic_id: number, name: string) =>
     request<Subtopic>('/api/subtopics', { method: 'POST', body: JSON.stringify({ topic_id, name }) }),
+
+  /** Attach (or clear) the article, lecture or problem a page came from. */
+  setPageUrl: (kind: TreeKind, id: number, url: string | null) => {
+    const path = { subject: 'subjects', topic: 'topics',
+                   subtopic: 'subtopics', lesson: 'lessons' }[kind]
+    return request<unknown>(`/api/${path}/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ url }),
+    })
+  },
   deleteSubject: (id: number) =>
     request<void>(`/api/subjects/${id}`, { method: 'DELETE' }),
   deleteTopic: (id: number) =>

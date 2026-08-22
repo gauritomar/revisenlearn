@@ -14,34 +14,41 @@ class SubjectCreate(BaseModel):
     name: str = Field(min_length=1, max_length=200)
     colour: Optional[str] = None
     sort_order: int = 0
+    #: The article, lecture or problem set this page came from.
+    url: Optional[str] = None
 
 
 class SubjectUpdate(BaseModel):
     name: Optional[str] = Field(default=None, min_length=1, max_length=200)
     colour: Optional[str] = None
     sort_order: Optional[int] = None
+    url: Optional[str] = None
 
 
 class TopicCreate(BaseModel):
     subject_id: int
     name: str = Field(min_length=1, max_length=200)
     sort_order: int = 0
+    url: Optional[str] = None
 
 
 class TopicUpdate(BaseModel):
     name: Optional[str] = Field(default=None, min_length=1, max_length=200)
     sort_order: Optional[int] = None
+    url: Optional[str] = None
 
 
 class SubtopicCreate(BaseModel):
     topic_id: int
     name: str = Field(min_length=1, max_length=200)
     sort_order: int = 0
+    url: Optional[str] = None
 
 
 class SubtopicUpdate(BaseModel):
     name: Optional[str] = Field(default=None, min_length=1, max_length=200)
     sort_order: Optional[int] = None
+    url: Optional[str] = None
 
 
 class LessonBrief(BaseModel):
@@ -59,6 +66,7 @@ class LessonBrief(BaseModel):
     name: str
     status: str
     position: int
+    url: Optional[str] = None
     checklist_total: int = 0
     checklist_done: int = 0
 
@@ -68,6 +76,7 @@ class SubtopicOut(BaseModel):
     topic_id: int
     name: str
     sort_order: int
+    url: Optional[str] = None
     lessons: list[LessonBrief] = []
 
 
@@ -76,6 +85,7 @@ class TopicOut(BaseModel):
     subject_id: int
     name: str
     sort_order: int
+    url: Optional[str] = None
     subtopics: list[SubtopicOut] = []
     #: Lessons hanging straight off the topic, with no subtopic.
     lessons: list[LessonBrief] = []
@@ -86,6 +96,7 @@ class SubjectOut(BaseModel):
     name: str
     colour: Optional[str] = None
     sort_order: int
+    url: Optional[str] = None
     topics: list[TopicOut] = []
 
 

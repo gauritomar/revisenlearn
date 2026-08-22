@@ -32,7 +32,10 @@ from .models import (
 
 log = logging.getLogger(__name__)
 
-LESSON_STATUS_PCT = {"not_started": 0.0, "in_progress": 50.0, "done": 100.0}
+#: Only used when a lesson has no checklist to measure. `revisit` sits at 50:
+#: the work was done once, and is being redone.
+LESSON_STATUS_PCT = {"not_started": 0.0, "in_progress": 50.0, "done": 100.0,
+                     "revisit": 50.0}
 
 
 def _now() -> datetime:

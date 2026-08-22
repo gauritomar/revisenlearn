@@ -19,6 +19,28 @@ class LLMError(RuntimeError):
     """Any provider failure, normalised."""
 
 
+class ProviderRefusedError(LLMError):
+    """The provider refused the call for a reason retrying will not fix.
+
+    Depleted credits, a rejected key, a bad request shape: all of these come
+    back as an opaque HTTP error, and the pipeline used to surface them as
+    "extraction failed" with a Retry button that spends again on the same
+    wall. Carrying the reason lets the UI say what to actually do.
+    """
+
+    def __init__(self, message: str, *, reason: str, action: str) -> None:
+        super().__init__(message)
+        #: One of: credits | auth | request | rate_limit | provider.
+        self.reason = reason
+        #: What the user can do about it, in a sentence.
+        self.action = action
+
+    @property
+    def retryable(self) -> bool:
+        """Whether pressing Retry could plausibly work."""
+        return self.reason in ("rate_limit", "provider")
+
+
 class SchemaValidationError(LLMError):
     """The model returned JSON that does not match the requested schema.
 

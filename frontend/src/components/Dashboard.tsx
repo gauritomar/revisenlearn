@@ -10,7 +10,9 @@ import type { TodoEntry } from '../lib/api'
  *
  *  Calendar · Today · Continue learning · Study next · Today's notes · Progress.
  *  The review-driven half of "Today" and the Progress charts need review data,
- *  so they fill in at Phase 7 and Phase 9. Explicitly no streaks (spec §14).
+ *  Explicitly no streaks (spec §14). Nothing here creates anything: adding a
+ *  subject belongs to the Roadmap and adding a resource to Resources, so this
+ *  screen only reports.
  */
 const todayISO = () => {
   const d = new Date()
@@ -45,8 +47,6 @@ export function Dashboard({ onView }: { onView: (v: string) => void }) {
     queryFn: () => api.todoBoard({ hide_completed: true }),
   })
 
-  const setResourceAdd = useUI((s) => s.setResourceAdd)
-  const setAddDialog = useUI((s) => s.setAddDialog)
 
   // §14 "Continue learning (recent resources with progress)".
   const continuing = allResources
@@ -67,14 +67,6 @@ export function Dashboard({ onView }: { onView: (v: string) => void }) {
             weekday: 'long', day: 'numeric', month: 'long',
           })}
         </span>
-        <button
-          type="button"
-          onClick={() => setResourceAdd(true)}
-          data-testid="dash-add-resource"
-          className="ml-auto rounded-md bg-accent px-3 py-1.5 text-[0.8125rem] font-medium text-white transition hover:bg-accent-deep"
-        >
-          Add resource
-        </button>
       </div>
 
       {empty && (
@@ -83,18 +75,11 @@ export function Dashboard({ onView }: { onView: (v: string) => void }) {
           <div className="mt-3 flex flex-wrap justify-center gap-2">
             <button
               type="button"
-              onClick={() => setAddDialog(true)}
+              onClick={() => onView('Roadmap')}
               data-testid="dashboard-add-first"
               className="rounded-md border border-line px-3 py-1.5 text-[0.8125rem] text-ink transition hover:border-accent hover:text-accent-deep"
             >
-              Add your first subject
-            </button>
-            <button
-              type="button"
-              onClick={() => setResourceAdd(true)}
-              className="rounded-md border border-line px-3 py-1.5 text-[0.8125rem] text-ink transition hover:border-accent hover:text-accent-deep"
-            >
-              Add a resource
+              Start in the Roadmap
             </button>
           </div>
         </div>
@@ -110,7 +95,7 @@ export function Dashboard({ onView }: { onView: (v: string) => void }) {
       {/* Today */}
       <Section title="Today" testid="dash-today">
         <div className="grid grid-cols-3 gap-3">
-          <Stat label="Due to review" value="—" hint="Phase 7" />
+          <Stat label="Due to review" value={progress?.due_today ?? 0} />
           <Stat label="New blocks" value={unprocessed} />
           <Stat label="Edited blocks" value={edited} tone={edited > 0 ? 'stale' : undefined} />
         </div>

@@ -87,6 +87,8 @@ export function PageScreen({ kind, id }: { kind: TreeKind; id: number }) {
         {/* The note is the page. */}
         <NoteEditor noteId={page.note_id} titleOverride={page.name} />
 
+        <PageLink kind={kind} id={id} url={page.url} onSaved={refresh} />
+
         {childLabel && (
           <section data-testid="page-children" className="mt-8 border-t border-line-soft pt-4">
             <h3 className="mb-2 text-[0.6875rem] font-semibold uppercase tracking-[0.09em] text-muted">
@@ -175,5 +177,86 @@ function PageIcon() {
             strokeLinejoin="round" />
       <path d="M7 1.5v2h2" stroke="currentColor" strokeWidth="1.1" strokeLinejoin="round" />
     </svg>
+  )
+}
+
+
+/** The source a page came from — an article, a lecture, a problem set.
+ *
+ *  "I should be able to embed links in topic/lesson names … and that link
+ *  should be displayed when its page is open." It sits under the title rather
+ *  than inside the note, because it belongs to the page, not to the writing:
+ *  it should not be sent to the model as content, and it should still be
+ *  there when the note is rewritten.
+ */
+function PageLink({ kind, id, url, onSaved }: {
+  kind: TreeKind
+  id: number
+  url: string | null
+  onSaved: () => void | Promise<void>
+}) {
+  const [editing, setEditing] = useState(false)
+
+  const save = useMutation({
+    mutationFn: (value: string | null) => api.setPageUrl(kind, id, value),
+    onSuccess: async () => { setEditing(false); await onSaved() },
+  })
+
+  if (editing) {
+    return (
+      <form
+        className="mt-2"
+        onSubmit={(e) => {
+          e.preventDefault()
+          const input = e.currentTarget.elements.namedItem('url') as HTMLInputElement
+          save.mutate(input.value.trim() || null)
+        }}
+      >
+        <input
+          name="url"
+          autoFocus
+          defaultValue={url ?? ''}
+          data-testid="page-link-input"
+          placeholder="https://…  (Enter to save, Esc to cancel, empty to remove)"
+          onKeyDown={(e) => { if (e.key === 'Escape') setEditing(false) }}
+          className="w-full rounded-md border border-accent bg-surface px-2 py-1 text-[0.75rem] text-ink outline-none"
+        />
+      </form>
+    )
+  }
+
+  if (!url) {
+    return (
+      <button
+        type="button"
+        onClick={() => setEditing(true)}
+        data-testid="page-link-add"
+        className="mt-2 text-[0.75rem] text-faint transition hover:text-accent-deep"
+      >
+        + Link an article, lecture or problem
+      </button>
+    )
+  }
+
+  return (
+    <p className="mt-2 flex items-center gap-2">
+      <a
+        href={url}
+        target="_blank"
+        rel="noreferrer"
+        data-testid="page-link"
+        className="min-w-0 flex-1 truncate text-[0.75rem] text-accent-deep underline decoration-line underline-offset-2 hover:decoration-accent"
+      >
+        {url}
+      </a>
+      <button
+        type="button"
+        onClick={() => setEditing(true)}
+        data-testid="page-link-edit"
+        className="shrink-0 text-[0.6875rem] text-faint transition hover:text-ink"
+      >
+        change
+      </button>
+    </p>
   )
 }

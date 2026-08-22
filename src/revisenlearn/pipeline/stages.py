@@ -81,10 +81,16 @@ class PipelineFailure(RuntimeError):
     """
 
     def __init__(self, message: str, *, llm_model: str | None = None,
-                 llm_error: str | None = None) -> None:
+                 llm_error: str | None = None, reason: str | None = None,
+                 action: str | None = None) -> None:
         super().__init__(message)
         self.llm_model = llm_model
         self.llm_error = llm_error
+        #: When the provider said something actionable — no credits, bad key —
+        #: it travels with the failure so the job can show it instead of a
+        #: Retry button pointed at a wall.
+        self.reason = reason
+        self.action = action
 
 
 @dataclass
@@ -131,7 +137,9 @@ def _has_content(block: NoteBlock) -> bool:
 
 def unprocessed_blocks(session: Session,
                        subject_id: int | None = None) -> list[NoteBlock]:
-    """Blocks that are new or edited-since-processed (spec §4.2)."""
+    """Blocks that are new or edited-since-processed (spec §4.2), on pages
+    that still exist — see `revisenlearn.tree`."""
+    from ..tree import on_a_live_page
     stmt = (
         select(NoteBlock)
         .join(Note, Note.id == NoteBlock.note_id)
@@ -140,12 +148,19 @@ def unprocessed_blocks(session: Session,
     if subject_id is not None:
         stmt = stmt.where(Note.subject_id == subject_id)
 
-    return [
-        block
-        for block in session.exec(stmt.order_by(NoteBlock.note_id,
-                                                NoteBlock.position)).all()
-        if block.processed_hash != block.content_hash and _has_content(block)
-    ]
+    live: dict[int, bool] = {}
+    out: list[NoteBlock] = []
+    for block in session.exec(stmt.order_by(NoteBlock.note_id,
+                                            NoteBlock.position)).all():
+        if block.processed_hash == block.content_hash or not _has_content(block):
+            continue
+        if block.note_id not in live:
+            note = session.get(Note, block.note_id)
+            live[block.note_id] = (note is not None
+                                   and on_a_live_page(session, note))
+        if live[block.note_id]:
+            out.append(block)
+    return out
 
 
 def create_job(session: Session, subject_id: int | None = None,
@@ -257,6 +272,8 @@ def stage_extracting(session: Session, job: PipelineJob,
             raise PipelineFailure(
                 f"Extraction failed: {exc}",
                 llm_model=cfg["model"], llm_error=str(exc),
+                reason=getattr(exc, "reason", None),
+                action=getattr(exc, "action", None),
             ) from None
 
         record_run(session, task="concept_extraction", result=result,
@@ -580,6 +597,8 @@ def _fail(job_id: int, message: str, stage: str | None = None,
             if stage is not None:
                 job.stage = stage
             job.error_text = message[:8000]
+            job.error_reason = failure.reason if failure is not None else None
+            job.error_action = failure.action if failure is not None else None
             job.finished_at = _now()
             session.add(job)
 

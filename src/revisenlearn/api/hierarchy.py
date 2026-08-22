@@ -80,7 +80,7 @@ def list_subjects(session: Session = Depends(get_session)) -> list[SubjectOut]:
         brief = LessonBrief(
             id=lesson.id, topic_id=lesson.topic_id,
             subtopic_id=lesson.subtopic_id, name=lesson.name,
-            status=lesson.status, position=lesson.position,
+            status=lesson.status, position=lesson.position, url=lesson.url,
             checklist_total=total, checklist_done=done,
         )
         if lesson.subtopic_id is not None:
@@ -92,7 +92,7 @@ def list_subjects(session: Session = Depends(get_session)) -> list[SubjectOut]:
     for st in subtopics:
         subs_by_topic.setdefault(st.topic_id, []).append(
             SubtopicOut(id=st.id, topic_id=st.topic_id, name=st.name,
-                        sort_order=st.sort_order,
+                        sort_order=st.sort_order, url=st.url,
                         lessons=lessons_by_subtopic.get(st.id, []))
         )
 
@@ -100,12 +100,14 @@ def list_subjects(session: Session = Depends(get_session)) -> list[SubjectOut]:
     for t in topics:
         topics_by_subject.setdefault(t.subject_id, []).append(
             TopicOut(id=t.id, subject_id=t.subject_id, name=t.name,
-                     sort_order=t.sort_order, subtopics=subs_by_topic.get(t.id, []),
+                     sort_order=t.sort_order, url=t.url,
+                     subtopics=subs_by_topic.get(t.id, []),
                      lessons=lessons_by_topic.get(t.id, []))
         )
 
     return [
-        SubjectOut(id=s.id, name=s.name, colour=s.colour, sort_order=s.sort_order,
+        SubjectOut(id=s.id, name=s.name, colour=s.colour,
+                   sort_order=s.sort_order, url=s.url,
                    topics=topics_by_subject.get(s.id, []))
         for s in subjects
     ]
