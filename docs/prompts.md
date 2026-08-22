@@ -74,3 +74,38 @@ discount. The current implementation issues standard interactive calls and
 records `request_mode='standard'`, so the recorded cost is truthful rather
 than claiming a discount that was not taken. Real batch submission is
 outstanding — see DECISIONS.md §8.
+
+### question_generation v1 — 2026-08-22
+Model:     gemini-3.7-flash        Thinking: low
+Mode:      standard                Cached:   no
+Changed:   First version. Transcribed verbatim from spec §11.3.
+Because:   Phase 7.
+Golden set: not yet run.
+
+### question_generation v2_interview — 2026-08-22
+Model:     gemini-3.7-flash        Thinking: low
+Mode:      standard                Cached:   no
+Changed:   Interview framing — "walk me through", trade-offs and
+           justification rather than definitions. A *new version*, not an
+           edit to v1, per §11: never edit a prompt in place. Selected
+           automatically when the review item's dimension is `interview`.
+Because:   Phase 10's "interview-specific prompt tuning".
+Golden set: not yet run.
+
+### evaluation v1 — 2026-08-22
+Model:     gemini-3.7-flash        Thinking: low
+Mode:      standard                Cached:   no
+Changed:   First version. Transcribed verbatim from spec §11.4.
+Because:   Phase 7.
+Golden set: not yet run.
+
+---
+
+## Outstanding
+
+**The golden set (§11.5) is not written.** `backend/evals/golden/` should hold
+10 hand-checked note fixtures with expected concept counts and names, and 20
+answer/key-point pairs with expected hit patterns, run against the live API
+before any `prompt_version` change. Building it means spending real money on
+real notes, so it is left for the user to seed with material they care about.
+Until it exists, treat every prompt version bump as unverified.

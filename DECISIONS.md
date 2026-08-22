@@ -489,3 +489,122 @@ so it is left for a follow-up.
 §9.1 is explicit and there is a test that reads every scheduling field before
 and after a full session and asserts nothing moved, plus that `review_logs`
 stayed empty. Recognition is not recall.
+
+---
+
+## 9. Phases 7–10 and Phase 2b
+
+### §9.5 contains a conflict; the guard wins **[recorded]**
+
+§9.5 asks two things of a passing retest: "advance the relearning step" and
+"can never … push the due date further out". In FSRS, advancing a relearning
+step *is* a longer interval — with the specced single `["10m"]` step, passing
+graduates the card back to Review and schedules it days away. Both cannot hold.
+
+The guard wins, because it is the clause the spec gives a reason for:
+"Otherwise the retest teaches FSRS that the user knew something they did not."
+A passing retest is therefore logged in full, with `is_retest=true` and
+`retest_of_attempt_id` set, but leaves the schedule alone. The test is named
+after the conflict so this is not mistaken for a bug later.
+
+### An override rewinds rather than compounds
+
+§9.4 says FSRS consumes `final_rating`. Naively that means calling
+`review_card` twice — once for the evaluator's rating, once for the override —
+which would double-count the review and, for "I actually got this", leave the
+lapse from the first call behind.
+
+The override instead rewinds the review item to the state recorded in the
+original log row's `*_before` columns, then re-runs FSRS once with the new
+rating. `review_logs` is append-only (§6), so the original row is untouched and
+the correction is a second row. Both the evaluator's verdict and the user's
+correction survive, which is what §9.4 asks for.
+
+### The `interview` dimension gets its own prompt version
+
+§18's Phase 10 asks for "interview-specific prompt tuning" and §11 forbids
+editing a prompt in place. So `question_generation_v2_interview` is a separate
+file, selected when the review item's dimension is `interview`, and recorded on
+both the `questions` row and its `llm_runs` row.
+
+### The mock round walks the graph
+
+§18 asks for "5 interview questions across related concepts". "Across related
+concepts" is doing real work there: five unrelated questions would not feel
+like one interview. The round seeds from the highest-priority interview item
+and walks its accepted edges two hops out, falling back to plain priority order
+when the neighbourhood is thinner than the round — a short graph should still
+give a full round.
+
+### Adaptive coverage is a button, not a nightly job
+
+§10.2 describes it as "a nightly maintenance pass". §21.5 says the rules are
+"conservative but untested" and may "inflate review volume", and principle §1.3
+says "the system never silently spends money or mutates the graph in the
+background". Those pull against each other, so it is exposed as an explicit
+action in Settings that reports exactly what it changed. Making it automatic is
+a one-line change once the rules have earned trust.
+
+### Two clauses of the addendum's §5 are enforced in opposite directions
+
+§5 forbids the progress layer and FSRS mastery from sharing a visual language.
+That is tested from both ends: the roadmap payload is asserted to contain no
+mastery vocabulary at all, and a 100% progress bar's *computed* fill colour is
+asserted to be the accent rather than a mastery green. The mastery palette
+appears in exactly two places — the graph console's nodes and the dashboard's
+distribution bar — and nowhere in the Roadmap.
+
+### The FTS5 autogenerate hazard, twice
+
+Alembic autogenerate does not know about the FTS5 virtual tables or the five
+shadow tables SQLite creates per index, because they are not in SQLModel's
+metadata. Generating the Phase 2b migration therefore emitted `DROP TABLE` for
+all twelve in `upgrade()` and `CREATE TABLE` for all twelve in `downgrade()` —
+the latter referencing `sa.NullType`, which is not a public attribute. The
+first broke upgrade; the second broke downgrade.
+
+Both were removed by hand, and `migrations/env.py` now passes an
+`include_object` filter so autogenerate never sees them again. Verified by
+running autogenerate against a current database and getting zero changes.
+
+### `!(x)?.y` does not mean what it looks like
+
+The `?` overlay guard was written as
+`!(e.target as HTMLElement)?.isContentEditable`, which parses as
+`(!e.target)?.isContentEditable`. It is now a named `isTyping()` function.
+Worth recording because the inline form reads correctly and is wrong.
+
+### Cytoscape sizes its own container
+
+The graph canvas collapsed to zero height twice: first because `h-full` cannot
+resolve inside the scrolling `<main>`, which has no definite height, and then
+because Cytoscape sets `position: relative` inline on its container, cancelling
+`absolute inset-0`. The fix is a definite height on the console
+(`100vh` minus the header) and a directly sized container. Measured in the
+browser rather than guessed a third time.
+
+---
+
+## 10. What is not built
+
+Honest list, so nothing here is a surprise.
+
+- **The golden set (§11.5).** `backend/evals/golden/` is empty. Building it
+  means spending real money on real notes, and the fixtures should be the
+  user's own material. Until it exists, every prompt version bump is
+  unverified. This is the most important outstanding item.
+- **MCQ generation is not on the Batch API** (§12.2). Standard calls, priced
+  and recorded as standard, so cost is truthful rather than claiming a discount
+  that was not taken. See §8 above.
+- **Context caching** (§12.4) for the long extraction and MCQ system prompts is
+  not implemented. `cached_tokens` is recorded on every run, so the saving will
+  be visible the moment it is.
+- **Saved graph views are computed, not stored.** §13.1 lists eight views and
+  all eight work, but "saved" in the sense of the user naming their own is not
+  built.
+- **Drag-to-reorder** for lessons and items (addendum §7) is not built;
+  `position` is maintained and the API accepts it, but reordering is not yet a
+  gesture.
+- **No prose questions are generated offline** (§16). That is by design — the
+  spec says revision requires the API — and the UI says so plainly and points
+  at Quick Practice instead.

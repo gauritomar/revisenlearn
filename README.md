@@ -4,7 +4,7 @@ A local-first study app. You write notes; the app turns them into durable
 concepts, then schedules them for review. Single user, single machine, no cloud,
 no auth, no Docker.
 
-**Status: Phases 1–6 complete.** See [Build status](#build-status).
+**Status: complete.** All ten phases plus the addendum's Phase 2b. See [Build status](#build-status).
 
 ---
 
@@ -113,10 +113,23 @@ against what you already know, and generates a pool of multiple-choice
 questions per concept. **Runs** shows what each job created and exactly what it
 cost.
 
-**Practice** is then a 20/30/50-question multiple-choice session with a
-stopwatch: `1`–`4` to answer, `Space` for the next. Practice feeds your
-statistics only — it never moves a review date, because recognition is not
-recall. Prose revision, which does drive scheduling, arrives in Phase 7.
+**Practice** is a 20/30/50-question multiple-choice session with a stopwatch:
+`1`–`4` to answer, `Space` for the next. It feeds your statistics only — it
+never moves a review date, because recognition is not recall.
+
+**Revision** is the one that does. Written answers, marked against key points,
+with a rating derived in Python rather than by the model. Five is the default
+session and a session of one still counts. Both override buttons are always
+there for when the grader is being stupid.
+
+**Roadmap** tracks what you have worked through — lessons and their items, with
+percentage bars. Deliberately a different visual language from mastery: a full
+bar there means you ticked every box, not that you know it. **Todos** is the
+flat "what's left" view across everything.
+
+**Graph** is the curation workspace: merge queue, proposed edges, stale
+concepts, auto-merges you can undo, and orphans. **Usage** shows what all of it
+has cost.
 
 ### Backup and export
 
@@ -152,7 +165,7 @@ question) arrive with the review loops in Phases 6 and 7.
 uv sync                      # Python deps
 cd frontend && npm install   # frontend deps
 
-uv run pytest                # all 271 tests
+uv run pytest                # all 430 tests
 uv run pytest -m "not ui"    # API + database only, no browser needed
 uv run pytest -m ui          # browser tests (needs: uv run playwright install chromium)
 
@@ -200,18 +213,19 @@ begins.
 |---|---|---|
 | 1 | Foundation | **done** |
 | 2 | Notes and resources | **done** |
+| 2b | Lessons, todos, roadmap (addendum) | **done** |
 | 3 | Backup and export | **done** |
 | 4 | Embeddings and identity | **done** |
 | 5 | LLM abstraction and pipeline | **done** |
 | 6 | Coverage, review items, MCQs | **done** |
-| 7 | FSRS and revision | not started |
-| 8 | Graph console | not started |
-| 9 | Mastery, usage, polish | not started |
-| 10 | Interview mode | not started |
+| 7 | FSRS and revision | **done** |
+| 8 | Graph console | **done** |
+| 9 | Mastery, usage, polish | **done** |
+| 10 | Interview mode | **done** |
 
-Phase 2 is done when "the user can do a full day of studying — add a resource,
-take notes, come back tomorrow and find them" (spec §18). That path is covered
-end to end by the test-suite.
+Phase 10 was specced for "month 4 or later"; interview mode is built but
+defaults off, exactly as §10.1 requires. Turn it on in Settings when you are
+ready for it.
 
 ---
 

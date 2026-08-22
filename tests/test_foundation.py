@@ -155,11 +155,15 @@ def test_database_is_in_wal_mode(tmp_path: Path) -> None:
     conn.close()
 
 
-def test_app_enforces_foreign_keys_and_busy_timeout(app) -> None:
-    """The pragmas must be live on the connections the app actually uses."""
+def test_app_enforces_foreign_keys_and_busy_timeout(app, monkeypatch) -> None:
+    """The pragmas must be live on the connections the app actually uses.
+
+    `monkeypatch`, not a bare assignment: setting RNL_DB_PATH permanently
+    leaks this test's database into every later in-process test in the run.
+    """
     from revisenlearn import config, db as db_module
 
-    os.environ["RNL_DB_PATH"] = str(app.db_path)
+    monkeypatch.setenv("RNL_DB_PATH", str(app.db_path))
     db_module.reset_engine()
     engine = db_module.get_engine()
     with engine.connect() as conn:
