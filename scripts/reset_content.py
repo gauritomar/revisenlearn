@@ -4,8 +4,10 @@
     uv run python scripts/reset_content.py --yes    # back up, then clear
 
 Deletes every row from the tables §0 names — subjects, topics, subtopics,
-lessons, lesson_items, notes, note_blocks, resources — plus the join tables and
-concept_sources that reference them, which would otherwise dangle.
+lessons, notes, note_blocks, resources — plus the join tables, the derived
+`checklist_items` and the `concept_sources` that reference them, which would
+otherwise dangle. `lesson_items` is listed too, harmlessly: §2 replaced it, and
+a database still on the old revision would otherwise keep its rows.
 
 Takes a `VACUUM INTO` snapshot first, per §17 of the main spec. Nothing else is
 touched: `settings`, `concepts`, `review_items`, `review_logs`, `llm_runs` and
@@ -32,6 +34,8 @@ CLEAR_ORDER = (
     "note_resource_links",
     "lesson_resource_links",
     "concept_sources",
+    # Derived from note blocks (§2), so it goes with them.
+    "checklist_items",
     "note_blocks",
     "notes",
     "lesson_items",
