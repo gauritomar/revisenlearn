@@ -1,0 +1,140 @@
+@import "tailwindcss";
+
+/* ------------------------------------------------------------------
+   Design system — spec §14.2 [JUDGEMENT]
+   Light mode only. No dark mode, no theme toggle, no prefers-color-scheme
+   handling anywhere in this file (spec §2 [LOCKED]).
+
+   Calm and text-forward: a place to read and write, not a dashboard product.
+   The accent is sampled from the periwinkle stroke in the logo's retention
+   curves. Fonts are all system faces so the app makes no network request for
+   chrome — it must work fully offline (spec §16).
+   ------------------------------------------------------------------ */
+@theme {
+  /* Warm off-white ground, not pure white */
+  --color-paper:        #FAF9F6;
+  --color-surface:      #FFFFFF;
+  --color-sunken:       #F3F1EC;
+
+  /* Warm near-black rather than #000 */
+  --color-ink:          #201E1B;
+  --color-ink-soft:     #4A453F;
+  --color-muted:        #7A736A;
+  --color-faint:        #A9A198;
+
+  --color-line:         #E7E2D9;
+  --color-line-soft:    #F0ECE4;
+
+  /* One accent, drawn from the logo */
+  --color-accent:       #6B6BDC;
+  --color-accent-deep:  #4F4FC4;
+  --color-accent-wash:  #EEEEFB;
+
+  /* §4.2 processed-state indicators — the pale blue is spec-exact */
+  --color-processed:    #DBEAFE;
+  --color-stale:        #F59E0B;
+  --color-stale-wash:   #FEF6E7;
+
+  /* Mastery scale, chosen to stay legible on the off-white ground */
+  --color-mastery-0:    #C8C2B8;
+  --color-mastery-1:    #D9A05B;
+  --color-mastery-2:    #C2903F;
+  --color-mastery-3:    #6B8E5A;
+  --color-mastery-4:    #47704A;
+
+  --font-ui:    ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI",
+                Inter, Helvetica, Arial, sans-serif;
+  /* Humanist/serif face for note text — generous and readable at length */
+  --font-note:  "Iowan Old Style", "Palatino Linotype", Palatino, Charter,
+                Georgia, ui-serif, serif;
+  --font-mono:  ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+}
+
+html, body, #root { height: 100%; }
+
+body {
+  margin: 0;
+  background: var(--color-paper);
+  color: var(--color-ink);
+  font-family: var(--font-ui);
+  -webkit-font-smoothing: antialiased;
+  /* Spec §14.1 — no horizontal scrolling, ever. */
+  overflow-x: hidden;
+}
+
+/* Quiet, non-intrusive scrollbars — this is a reading surface. */
+* { scrollbar-width: thin; scrollbar-color: var(--color-line) transparent; }
+*::-webkit-scrollbar { width: 9px; height: 9px; }
+*::-webkit-scrollbar-thumb {
+  background: var(--color-line);
+  border-radius: 999px;
+}
+*::-webkit-scrollbar-track { background: transparent; }
+
+/* ------------------------------------------------------------------
+   Editor surface (spec §4.1: long, continuous, bullet-first, generous
+   line height)
+   ------------------------------------------------------------------ */
+.note-prose {
+  font-family: var(--font-note);
+  font-size: 1.0625rem;
+  line-height: 1.75;
+  color: var(--color-ink);
+}
+.note-prose:focus { outline: none; }
+.note-prose > * + * { margin-top: 0.55rem; }
+.note-prose h1 { font-size: 1.5rem;   font-weight: 600; line-height: 1.3; margin-top: 1.4rem; }
+.note-prose h2 { font-size: 1.25rem;  font-weight: 600; line-height: 1.35; margin-top: 1.2rem; }
+.note-prose h3 { font-size: 1.0625rem; font-weight: 700; line-height: 1.4; margin-top: 1rem; }
+.note-prose ul { list-style: disc;    padding-left: 1.3rem; }
+.note-prose ol { list-style: decimal; padding-left: 1.4rem; }
+.note-prose li { margin-top: 0.2rem; }
+.note-prose li::marker { color: var(--color-faint); }
+.note-prose blockquote {
+  border-left: 3px solid var(--color-line);
+  padding-left: 0.9rem;
+  color: var(--color-ink-soft);
+  font-style: italic;
+}
+.note-prose pre {
+  font-family: var(--font-mono);
+  font-size: 0.875rem;
+  line-height: 1.6;
+  background: var(--color-sunken);
+  border: 1px solid var(--color-line-soft);
+  border-radius: 8px;
+  padding: 0.75rem 0.9rem;
+  overflow-x: auto;         /* the code block scrolls, never the page */
+  white-space: pre;
+}
+.note-prose code {
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+  background: var(--color-sunken);
+  padding: 0.1em 0.32em;
+  border-radius: 4px;
+}
+.note-prose pre code { background: none; padding: 0; }
+.note-prose hr {
+  border: none;
+  border-top: 1px solid var(--color-line);
+  margin: 1.4rem 0;
+}
+.note-prose a { color: var(--color-accent-deep); text-decoration: underline; }
+
+/* Tiptap placeholder */
+.note-prose p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  float: left;
+  height: 0;
+  pointer-events: none;
+  color: var(--color-faint);
+}
+
+/* Search snippets come back with <mark> from FTS5 */
+mark {
+  background: var(--color-accent-wash);
+  color: var(--color-accent-deep);
+  border-radius: 3px;
+  padding: 0 2px;
+}

@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"><title>Study OS — Notes</title>
+<style>
+:root{--side:#f7f7f5;--border:#e7e7e4;--muted:#777}*{box-sizing:border-box}body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#242424;display:flex;height:100vh}.sidebar{width:250px;background:var(--side);border-right:1px solid var(--border);padding:16px 10px}.logo{font-weight:700;padding:8px 10px 18px}.nav a{display:block;padding:8px 10px;border-radius:5px;text-decoration:none;color:#444}.nav a.active,.nav a:hover{background:#ececea}.icon{display:inline-block;width:22px}.workspace{font-size:11px;color:#777;text-transform:uppercase;margin:22px 10px 7px}.tree div{padding:6px 10px}.indent{padding-left:31px!important;color:#666}.main{flex:1;display:flex}.editor{width:min(850px,70%);padding:45px 65px;overflow:auto}.right{flex:1;border-left:1px solid var(--border);padding:25px;background:#fafafa}.crumb{color:#777;font-size:13px;margin-bottom:25px}input.title{font-size:34px;font-weight:700;border:0;outline:0;width:100%;margin-bottom:20px}textarea{width:100%;min-height:400px;border:0;outline:0;resize:none;font:16px/1.7 Georgia,serif} .toolbar{position:sticky;top:0;background:white;border:1px solid var(--border);border-radius:7px;padding:6px;margin-bottom:20px}.toolbar button{border:0;background:white;padding:6px 9px;cursor:pointer}.save{float:right;color:#2383e2;font-size:12px;padding-top:7px}.meta{font-size:12px;color:#777;border-bottom:1px solid var(--border);padding-bottom:18px;margin-bottom:18px}.pipeline{background:white;border:1px solid var(--border);border-radius:8px;padding:15px}.pipeline h3{margin:0 0 12px;font-size:14px}.step{padding:9px 0;border-top:1px solid var(--border);font-size:13px}.dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:#52a45a;margin-right:8px}
+</style></head>
+<body>
+<aside class="sidebar"><div class="logo">◈ Study OS</div><div class="workspace">Workspace</div><nav class="nav">
+<a href="index.html"><span class="icon">⌂</span>Dashboard</a><a class="active" href="notes.html"><span class="icon">▤</span>Notes</a><a href="review.html"><span class="icon">✓</span>Review <b style="float:right">12</b></a><a href="knowledge.html"><span class="icon">⌘</span>Knowledge Graph</a></nav>
+<div class="workspace">Subjects</div><div class="tree"><div>▾ GenAI</div><div class="indent">RAG</div><div class="indent">Agents</div><div class="indent">LLMs</div><div>▸ Machine Learning</div><div>▸ Statistics</div><div>▸ Python</div><div>▸ SQL</div></div></aside>
+<main class="main"><section class="editor"><div class="crumb">GenAI / RAG / August 22, 2026</div><div class="toolbar"><button><b>B</b></button><button><i>I</i></button><button>H1</button><button>H2</button><button>• List</button><button>1. List</button><button>` Code</button><span class="save">Saved just now</span></div>
+<input class="title" value="Retrieval-Augmented Generation"><div class="meta">August 22, 2026 · RAG · 14 min read</div>
+<textarea>RAG combines retrieval with generation. The retriever finds relevant external context and passes it to the generator.
+
+Key ideas
+• Retrieval quality is an independent bottleneck from generation quality.
+• Chunking affects both retrieval precision and recall.
+• A strong generator cannot compensate for consistently poor context.
+
+Questions I want to understand:
+• How should chunk size be selected?
+• How do we evaluate retrieval separately from generation?
+• What happens when the retriever returns relevant but incomplete context?</textarea>
+</section>
+<aside class="right"><div style="font-weight:600;margin-bottom:15px">Knowledge pipeline</div><div class="pipeline"><h3>Today's notes</h3><div class="step"><span class="dot"></span>Notes saved</div><div class="step"><span class="dot"></span>Concept extraction ready</div><div class="step">○ Generate concepts</div><div class="step">○ Generate questions</div><div class="step">○ Schedule reviews</div></div><br><button onclick="alert('Pipeline triggered')" style="width:100%;padding:10px;border:0;border-radius:6px;background:#242424;color:white">Process these notes</button></aside></main>
+</body></html>

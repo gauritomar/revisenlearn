@@ -1,0 +1,12 @@
+from fastapi import APIRouter
+
+from . import hierarchy, meta, notes, search, settings
+
+api_router = APIRouter(prefix="/api")
+api_router.include_router(meta.router, tags=["meta"])
+api_router.include_router(hierarchy.router, tags=["hierarchy"])
+api_router.include_router(notes.router, tags=["notes"])
+api_router.include_router(search.router, tags=["search"])
+api_router.include_router(settings.router, tags=["settings"])
+
+__all__ = ["api_router"]

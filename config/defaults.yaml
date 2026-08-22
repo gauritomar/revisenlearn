@@ -1,0 +1,40 @@
+# Non-secret application defaults. Editable values that the user can change at
+# runtime live in the `settings` table (spec §6); this file holds the constants
+# that ship with the build.
+version: "0.1.0"
+
+server:
+  host: "127.0.0.1"   # spec §17 — loopback only, never 0.0.0.0
+  port: 8420          # spec §17 — one process, one port
+
+editor:
+  # Spec §4.1
+  autosave_debounce_ms: 800
+  autosave_interval_ms: 30000
+  block_types:
+    - paragraph
+    - heading1
+    - heading2
+    - heading3
+    - bullet_list_item
+    - numbered_list_item
+    - quote
+    - code_block
+    - divider
+
+identity:
+  # Spec §7.2 — also mirrored into `settings` so the Settings screen can edit
+  # them without a redeploy.
+  auto_merge_threshold: 0.92
+  merge_queue_threshold: 0.82
+
+ui:
+  # Spec §14.1 — the four widths the layout is audited at.
+  breakpoints: [500, 650, 900, 1440]
+  sidebar_collapse_below: 900
+
+backup:
+  # Spec §17
+  hour: 3
+  retain_daily: 7
+  retain_weekly: 4

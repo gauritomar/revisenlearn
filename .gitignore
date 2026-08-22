@@ -1,0 +1,28 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# Node
+node_modules/
+
+# Build output
+dist/
+frontend/dist/
+
+# Database — the user's permanent record lives in ~/.revisenlearn/,
+# but never commit a stray local copy either.
+*.db
+*.db-shm
+*.db-wal
+
+# Secrets. creds/ holds the Gemini API key (spec §17: never in the repo).
+creds/
+.env
+
+# Noise
+.DS_Store
+*.log
+
+# TypeScript incremental build artifact
+*.tsbuildinfo

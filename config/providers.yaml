@@ -1,0 +1,52 @@
+# Spec §12 [LOCKED]. Swapping a model is a config change, never a code change.
+# No key material here — the key comes from the macOS Keychain (spec §17).
+#
+# NOTE: no LLM call is made anywhere in Phase 1. This file is the contract that
+# Phase 5's LLMProvider implementation reads.
+
+provider: gemini
+
+gemini:
+  # Spec §12.1 — Interactions API on google-genai v2.0.0+.
+  # The legacy generateContent path is not used.
+  sdk: "google-genai>=2.0.0"
+  api: interactions
+
+  # Spec §12.3 — do NOT set temperature, top_p, top_k or candidate_count for
+  # any Gemini 3.x model. Use thinking_level, never thinking_budget, and never
+  # both.
+  forbidden_parameters: [temperature, top_p, top_k, candidate_count]
+
+# Spec §12.2
+tasks:
+  concept_extraction:
+    model: gemini-3.7-flash
+    thinking_level: medium
+    mode: standard
+    cache_system_prompt: true      # spec §12.4
+  mcq_generation:
+    model: gemini-3.5-flash-lite
+    thinking_level: low
+    mode: batch                    # 50% discount, latency-insensitive
+    cache_system_prompt: true
+  question_generation:
+    model: gemini-3.7-flash
+    thinking_level: low
+    mode: standard
+  evaluation:
+    model: gemini-3.7-flash
+    thinking_level: low
+    mode: standard
+  edge_proposal:
+    model: gemini-3.5-flash-lite
+    thinking_level: low
+    mode: standard
+
+embeddings:
+  # Spec §2 — local, ONNX, no PyTorch. Runs offline (spec §16).
+  provider: fastembed
+  model: BAAI/bge-small-en-v1.5
+  dim: 384
+
+context_cache:
+  ttl_seconds: 3600                # spec §12.4

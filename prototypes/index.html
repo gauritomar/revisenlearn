@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Study OS — Dashboard</title>
+<style>
+:root{--bg:#fff;--sidebar:#f7f7f5;--border:#e7e7e4;--text:#242424;--muted:#787878;--hover:#ececea;--accent:#2383e2}
+*{box-sizing:border-box}body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:var(--text);background:var(--bg);display:flex;height:100vh;font-size:14px}
+.sidebar{width:250px;background:var(--sidebar);border-right:1px solid var(--border);padding:16px 10px;display:flex;flex-direction:column}
+.logo{font-weight:700;font-size:15px;padding:8px 10px 18px}.workspace{font-size:11px;text-transform:uppercase;color:var(--muted);padding:0 10px 7px}
+.nav a{display:block;padding:8px 10px;border-radius:5px;color:#444;text-decoration:none;margin:1px 0}.nav a:hover,.nav a.active{background:var(--hover)}
+.nav .icon{display:inline-block;width:22px}.section{margin-top:20px}.tree{font-size:13px}.tree div{padding:6px 10px;color:#555}.tree .indent{padding-left:31px}.bottom{margin-top:auto}.button{border:0;background:#2383e2;color:white;border-radius:5px;padding:9px 12px;width:100%;font-weight:600;cursor:pointer}
+.main{flex:1;overflow:auto}.topbar{height:52px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 30px}.crumb{color:var(--muted)}.content{max-width:1100px;margin:0 auto;padding:38px 55px 80px}h1{font-size:32px;margin:0 0 8px}h2{font-size:20px;margin:34px 0 14px}.sub{color:var(--muted);margin-bottom:28px}
+.review{background:#f7f7f5;border:1px solid var(--border);border-radius:9px;padding:18px 20px;display:flex;justify-content:space-between;align-items:center}.review strong{font-size:22px}.review button{background:#242424;color:#fff;border:0;border-radius:5px;padding:10px 16px;cursor:pointer}
+.calendar{border:1px solid var(--border);border-radius:8px;overflow:hidden}.calhead{display:grid;grid-template-columns:repeat(7,1fr);background:#fafafa;border-bottom:1px solid var(--border)}.calhead div{padding:10px;color:var(--muted);font-size:12px}.days{display:grid;grid-template-columns:repeat(7,1fr)}.day{min-height:105px;border-right:1px solid var(--border);border-bottom:1px solid var(--border);padding:9px}.day:nth-child(7n){border-right:0}.date{font-size:12px;color:#777}.tag{font-size:11px;padding:3px 5px;background:#eef6ff;color:#27649a;border-radius:4px;margin-top:7px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.tag.green{background:#edf7ed;color:#39703d}.tag.gray{background:#f0f0ee;color:#666}.today{outline:2px solid #2383e2;outline-offset:-2px}
+</style>
+</head>
+<body>
+<aside class="sidebar">
+<div class="logo">◈ Study OS</div>
+<div class="workspace">Workspace</div>
+<nav class="nav">
+<a class="active" href="index.html"><span class="icon">⌂</span>Dashboard</a>
+<a href="notes.html"><span class="icon">▤</span>Notes</a>
+<a href="review.html"><span class="icon">✓</span>Review <b style="float:right">12</b></a>
+<a href="knowledge.html"><span class="icon">⌘</span>Knowledge Graph</a>
+</nav>
+<div class="section workspace">Subjects</div>
+<div class="tree">
+<div>▾ GenAI</div><div class="indent">RAG</div><div class="indent">Agents</div><div class="indent">LLMs</div>
+<div>▸ Machine Learning</div><div>▸ Statistics</div><div>▸ Python</div><div>▸ SQL</div>
+</div>
+<div class="bottom"><button class="button">+ New note</button></div>
+</aside>
+<main class="main">
+<div class="topbar"><span class="crumb">Dashboard</span><span>Saturday, August 22</span></div>
+<div class="content">
+<h1>Good afternoon.</h1><div class="sub">Keep learning. Your knowledge graph is growing.</div>
+<div class="review"><div><div style="color:var(--muted);font-size:12px">Reviews due today</div><strong>12 concepts</strong></div><button onclick="location.href='review.html'">Start review →</button></div>
+<h2>Notes over time</h2>
+<div class="calendar">
+<div class="calhead"><div>MON</div><div>TUE</div><div>WED</div><div>THU</div><div>FRI</div><div>SAT</div><div>SUN</div></div>
+<div class="days">
+<script>
+const entries=[
+['27','Python','SQL'],['28','RAG'],['29'],['30','Statistics','Python'],['31','Agents'],['1','LLMs'],['2'],
+['3','RAG','Evaluation'],['4'],['5','Python'],['6','SQL'],['7','LLMs','Agents'],['8'],['9'],
+['10','ML','Statistics'],['11','Python'],['12'],['13','RAG'],['14','SQL','Python'],['15'],['16'],
+['17','Agents'],['18','LLMs'],['19','Evaluation'],['20','Python'],['21','RAG'],['22','GenAI','Python'],['23']
+];
+entries.forEach((e,i)=>{document.write(`<div class="day ${e[0]=='22'?'today':''}"><div class="date">${e[0]}</div>${e.slice(1).map((x,j)=>`<div class="tag ${j?'green':''}">${x}</div>`).join('')}</div>`)});
+</script>
+</div></div>
+</div>
+</main>
+</body>
+</html>
