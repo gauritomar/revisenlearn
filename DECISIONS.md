@@ -659,6 +659,37 @@ has not written yet. Neither is worth an input token, so both are excluded
 from what "Process notes" sends — visible in the new block preview, which
 lists exactly what a run would spend money on.
 
+### Migrations were not transactional, and that cost real data
+
+The rework shipped with three faults that every test missed for the same
+reason: the suite only ever migrated **empty** databases.
+
+1. Alembic's SQLite batch mode rebuilds a table by copying it, dropping the
+   original and renaming. With `PRAGMA foreign_keys=ON`, `DROP TABLE notes`
+   fails — `note_blocks`, `checklist_items` and `concept_sources` all point at
+   it. An empty database has no such rows and no such failure. Enforcement is
+   now off **for migration connections only**, which is what the Alembic docs
+   prescribe for batch mode, and `PRAGMA foreign_key_check` runs inside the
+   same transaction before it commits.
+2. pysqlite emits `BEGIN` before DML but never before DDL, so each
+   `CREATE`/`DROP`/`ALTER` committed as it ran. When (1) failed halfway, the
+   completed steps stayed and `alembic_version` still claimed the old
+   revision — a database that could never migrate again, because the next
+   attempt hit "table checklist_items already exists". `env.py` now disables
+   pysqlite's transaction handling and issues its own `BEGIN`, and commits
+   explicitly: Alembic assumes non-transactional DDL on SQLite and will not
+   commit for us, so without that last line the whole migration rolled back
+   silently, with exit code 0.
+3. `_convert_lesson_items` wrote `notes.lesson_id` before the migration added
+   that column — the conversion ran *before* the ALTERs. It never failed only
+   because with no rows to convert it returned early. It also never wrote the
+   `checklist_items` rows for what it converted, which would have left those
+   items invisible until the note was next saved.
+
+`tests/test_migrations.py` migrates a database that has content in it, and
+asserts that a deliberate mid-migration failure leaves nothing behind. That is
+the test that was missing.
+
 ### The Keychain had to become hideable
 
 `test_settings_reports_key_presence_but_never_the_key` asserts the app says

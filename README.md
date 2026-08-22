@@ -56,6 +56,10 @@ runs every migration, seeds the settings table, and seeds a small starter
 subject tree so the sidebar is not empty. Rename or delete those subjects
 freely — they are only a starting point.
 
+Migrations run inside one transaction: if any step fails, the database is left
+exactly as it was, and the error says why. A launch that reports a migration
+error has changed nothing.
+
 Your data lives in `~/.revisenlearn/`. That directory is the whole app state;
 back it up and you have backed up everything.
 
@@ -65,6 +69,14 @@ back it up and you have backed up everything.
   backups/            automatic nightly copies, 7 daily + 4 weekly
   exports/            Markdown exports you asked for
 ```
+
+Two maintenance scripts live in `scripts/`. Both print what they would do and
+change nothing until you add `--yes`, and both take a backup first:
+
+| Script | What it does |
+|---|---|
+| `reset_content.py` | Clears subjects, topics, subtopics, lessons, notes and resources, keeping the schema, settings and everything you have learned |
+| `adopt_notes_into_lessons.py` | Gives each pre-rework note a Lesson, so the sidebar can open it — notes written before lessons existed are otherwise reachable only from the calendar |
 
 ---
 

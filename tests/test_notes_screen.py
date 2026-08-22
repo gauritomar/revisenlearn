@@ -188,7 +188,14 @@ def test_process_notes_count_includes_edited_blocks(page, app) -> None:
         timeout=10_000,
     )
 
-    # Edit one -> it becomes pending again.
+    # Edit one -> it becomes pending again. Wait for the stored text to be in
+    # the editor first: clicking straight away races the note's hydration, and
+    # under a loaded machine that race is lost often enough to matter.
+    page.wait_for_function(
+        "() => document.querySelector('[data-testid=note-editor]')"
+        "?.innerText.includes('Alpha')",
+        timeout=15_000,
+    )
     page.get_by_text("Alpha").click()
     page.keyboard.press("End")
     page.keyboard.type(" revised")
