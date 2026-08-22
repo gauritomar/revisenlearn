@@ -16,7 +16,16 @@ from sqlmodel import Session, select
 from ..db import get_session, reindex_block
 from ..hashing import content_hash
 from ..models import Note, NoteBlock, Resource, Subject, Subtopic, Topic
-from .schemas import BlockOut, BlocksSave, NoteCreate, NoteOut, NoteUpdate
+from .schemas import (
+    BlockOut,
+    BlocksSave,
+    CalendarDay,
+    CalendarMonth,
+    CalendarPill,
+    NoteCreate,
+    NoteOut,
+    NoteUpdate,
+)
 
 router = APIRouter()
 
@@ -211,6 +220,58 @@ def notes_by_date(study_date: date_cls,
         .order_by(Note.id)
     ).all()
     return [_note_out(session, n) for n in notes]
+
+
+@router.get("/notes/calendar/{month}", response_model=CalendarMonth)
+def calendar_month(month: str,
+                   session: Session = Depends(get_session)) -> CalendarMonth:
+    """One month of writing activity for the §14 calendar.
+
+    ``month`` is ``YYYY-MM``. Each day that has notes comes back with a count
+    and the distinct topics written about, which the calendar renders as pills.
+    """
+    try:
+        year_s, month_s = month.split("-")
+        year, month_no = int(year_s), int(month_s)
+        first = date_cls(year, month_no, 1)
+    except (ValueError, TypeError):
+        raise HTTPException(400, "month must be YYYY-MM") from None
+
+    last = date_cls(year + (month_no == 12), (month_no % 12) + 1, 1)
+
+    rows = session.exec(
+        select(Note, Topic, Subject)
+        .join(Topic, Topic.id == Note.topic_id, isouter=True)
+        .join(Subject, Subject.id == Note.subject_id, isouter=True)
+        .where(
+            Note.deleted_at.is_(None),
+            Note.study_date >= first,
+            Note.study_date < last,
+        )
+        .order_by(Note.study_date)
+    ).all()
+
+    by_day: dict[str, dict] = {}
+    for note, topic, subject in rows:
+        key = note.study_date.isoformat()
+        day = by_day.setdefault(key, {"date": note.study_date, "note_count": 0,
+                                      "topics": [], "_seen": set()})
+        day["note_count"] += 1
+        if topic is not None and topic.id not in day["_seen"]:
+            day["_seen"].add(topic.id)
+            day["topics"].append(
+                CalendarPill(
+                    topic_id=topic.id,
+                    name=topic.name,
+                    colour=(subject.colour if subject else None),
+                )
+            )
+
+    days = [
+        CalendarDay(date=d["date"], note_count=d["note_count"], topics=d["topics"])
+        for d in sorted(by_day.values(), key=lambda d: d["date"])
+    ]
+    return CalendarMonth(month=month, days=days)
 
 
 # --- Single note -----------------------------------------------------------

@@ -189,6 +189,28 @@ class ResourceOut(BaseModel):
     completed_at: Optional[datetime] = None
 
 
+# --- Calendar --------------------------------------------------------------
+
+class CalendarPill(BaseModel):
+    """A topic written about on a given day (spec §14: "topic pills per day")."""
+
+    topic_id: int
+    name: str
+    colour: Optional[str] = None
+
+
+class CalendarDay(BaseModel):
+    date: date
+    note_count: int
+    topics: list[CalendarPill] = []
+
+
+class CalendarMonth(BaseModel):
+    month: str  # YYYY-MM
+    #: Only days that actually have notes. The grid is drawn client-side.
+    days: list[CalendarDay] = []
+
+
 # --- Search ----------------------------------------------------------------
 
 class SearchHit(BaseModel):

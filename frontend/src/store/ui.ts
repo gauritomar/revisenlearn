@@ -10,6 +10,7 @@ type UIState = {
   activeSubtopicId: number | null
   activeNoteId: number | null
   activeResourceId: number | null
+  activeDate: string | null
   paletteOpen: boolean
   addDialogOpen: boolean
   resourceAddOpen: boolean
@@ -20,6 +21,7 @@ type UIState = {
   toggleTopic: (id: number) => void
   openSubtopic: (subtopicId: number, noteId: number) => void
   openResource: (resourceId: number) => void
+  openDate: (date: string) => void
   clearResource: () => void
   clearActive: () => void
   setPalette: (open: boolean) => void
@@ -40,6 +42,7 @@ export const useUI = create<UIState>()(
       activeSubtopicId: null,
       activeNoteId: null,
       activeResourceId: null,
+      activeDate: null,
       paletteOpen: false,
       addDialogOpen: false,
       resourceAddOpen: false,
@@ -62,11 +65,24 @@ export const useUI = create<UIState>()(
           activeResourceId: resourceId,
           activeSubtopicId: null,
           activeNoteId: null,
+          activeDate: null,
           paletteOpen: false,
+        }),
+      openDate: (date) =>
+        set({
+          activeDate: date,
+          activeNoteId: null,
+          activeSubtopicId: null,
+          activeResourceId: null,
         }),
       clearResource: () => set({ activeResourceId: null }),
       clearActive: () =>
-        set({ activeSubtopicId: null, activeNoteId: null, activeResourceId: null }),
+        set({
+          activeSubtopicId: null,
+          activeNoteId: null,
+          activeResourceId: null,
+          activeDate: null,
+        }),
       setPalette: (open) => set({ paletteOpen: open }),
       setAddDialog: (open) => set({ addDialogOpen: open }),
       setResourceAdd: (open) => set({ resourceAddOpen: open }),
@@ -82,6 +98,7 @@ export const useUI = create<UIState>()(
         activeSubtopicId: s.activeSubtopicId,
         activeNoteId: s.activeNoteId,
         activeResourceId: s.activeResourceId,
+        activeDate: s.activeDate,
       }),
     },
   ),

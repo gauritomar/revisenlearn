@@ -3,12 +3,13 @@ import { useQuery } from '@tanstack/react-query'
 import { api, type Note, type Resource } from '../lib/api'
 import { useUI } from '../store/ui'
 import { ResourceRow } from './ResourceList'
+import { Calendar } from './Calendar'
 
 /** Spec §14 Dashboard, v1.
  *
- *  Today · Continue learning · Study next · Today's notes · Progress.
- *  The calendar and the review-driven half of "Today" arrive with their own
- *  phases. Explicitly no streaks (spec §14).
+ *  Today · Continue learning · Study next · Today's notes · Calendar · Progress.
+ *  The review-driven half of "Today" and the Progress charts need review data,
+ *  so they fill in at Phase 7 and Phase 9. Explicitly no streaks (spec §14).
  */
 const todayISO = () => {
   const d = new Date()
@@ -137,6 +138,10 @@ export function Dashboard({ onView }: { onView: (v: string) => void }) {
             ))}
           </ul>
         )}
+      </Section>
+
+      <Section title="Calendar" testid="dash-calendar">
+        <Calendar />
       </Section>
 
       <Section title="Progress" testid="dash-progress">

@@ -58,6 +58,10 @@ export type Placement = {
   subtopic_id?: number | null
 }
 
+export type CalendarPill = { topic_id: number; name: string; colour: string | null }
+export type CalendarDay = { date: string; note_count: number; topics: CalendarPill[] }
+export type CalendarMonth = { month: string; days: CalendarDay[] }
+
 export type SearchHit = {
   kind: 'note_block' | 'concept'
   note_id: number | null
@@ -147,6 +151,8 @@ export const api = {
     ).toString()
     return request<Note[]>(`/api/notes${qs ? `?${qs}` : ''}`)
   },
+
+  calendar: (month: string) => request<CalendarMonth>(`/api/notes/calendar/${month}`),
 
   search: (q: string) =>
     request<{ query: string; hits: SearchHit[] }>(`/api/search?q=${encodeURIComponent(q)}`),
