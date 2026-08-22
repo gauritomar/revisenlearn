@@ -36,6 +36,10 @@ export function Dashboard({ onView }: { onView: (v: string) => void }) {
     queryFn: () => api.notesByDate(today),
   })
   // Addendum §6 — a short Todos panel, nearest due date first.
+  const { data: progress } = useQuery({
+    queryKey: ['progress'],
+    queryFn: api.progress,
+  })
   const { data: todoBoard } = useQuery({
     queryKey: ['todo-board', 'dashboard'],
     queryFn: () => api.todoBoard({ hide_completed: true }),
@@ -178,11 +182,23 @@ export function Dashboard({ onView }: { onView: (v: string) => void }) {
         <Calendar />
       </Section>
 
+      {/* Spec §14 — concepts, reviews, mastery distribution. No streaks. */}
       <Section title="Progress" testid="dash-progress">
-        <Empty>
-          Concepts, reviews, mastery distribution and retention appear once
-          review data exists.
-        </Empty>
+        {!progress || progress.concepts === 0 ? (
+          <Empty>
+            Concepts, reviews and mastery appear once you have processed some
+            notes.
+          </Empty>
+        ) : (
+          <>
+            <div className="grid grid-cols-3 gap-3">
+              <Stat label="Concepts" value={progress.concepts} />
+              <Stat label="Reviews" value={progress.reviews} />
+              <Stat label="Answers" value={progress.mcq_answers + progress.prose_answers} />
+            </div>
+            <MasteryBar distribution={progress.mastery_distribution} />
+          </>
+        )}
       </Section>
     </div>
   )
@@ -280,3 +296,49 @@ function Stat({ label, value, hint, tone }: {
 const Empty = ({ children }: { children: React.ReactNode }) => (
   <p className="text-[0.8125rem] leading-relaxed text-faint">{children}</p>
 )
+
+
+/** Spec §10.5's badge states, as a distribution bar.
+ *
+ *  These colours are reserved for mastery. The addendum's §5 is explicit that
+ *  the Roadmap progress bars must not borrow them — a green here means "I can
+ *  recall and explain this reliably, recently", not "I ticked every box".
+ */
+function MasteryBar({ distribution }: { distribution: Record<string, number> }) {
+  const order = ['mastered', 'fading', 'learning', 'untested']
+  const colour: Record<string, string> = {
+    mastered: 'var(--color-mastery-4)',
+    fading: 'var(--color-mastery-1)',
+    learning: 'var(--color-accent)',
+    untested: 'var(--color-mastery-0)',
+  }
+  const total = order.reduce((n, key) => n + (distribution[key] ?? 0), 0)
+  if (total === 0) return null
+
+  return (
+    <div className="mt-3" data-testid="mastery-distribution">
+      <div className="flex h-2 overflow-hidden rounded-full bg-sunken">
+        {order.map((key) => {
+          const value = distribution[key] ?? 0
+          if (value === 0) return null
+          return (
+            <span
+              key={key}
+              data-testid={`mastery-${key}`}
+              title={`${value} ${key}`}
+              style={{ width: `${(value / total) * 100}%`, background: colour[key] }}
+            />
+          )
+        })}
+      </div>
+      <div className="mt-1.5 flex flex-wrap gap-3 text-[0.6875rem] text-muted">
+        {order.map((key) => (
+          <span key={key} className="flex items-center gap-1">
+            <span className="size-2 rounded-full" style={{ background: colour[key] }} />
+            {distribution[key] ?? 0} {key}
+          </span>
+        ))}
+      </div>
+    </div>
+  )
+}

@@ -93,3 +93,86 @@ def stage_planning_coverage(session: Session, job, ctx) -> None:
     session.flush()
     if total:
         log.info("Created %s review item(s)", total)
+
+
+# --------------------------------------------------------------------------
+# §10.2 Adaptive coverage **[LOCKED]**
+#
+# "The profile is adaptive: a nightly maintenance pass adds `debug` to any
+# concept whose `apply` dimension has lapsed twice, and adds `synthesis` to any
+# concept with three or more accepted edges whose `explain` and `apply` are
+# both above 80% mastery. Removals are never automatic — only the user removes
+# a dimension."
+# --------------------------------------------------------------------------
+
+LAPSES_FOR_DEBUG = 2
+EDGES_FOR_SYNTHESIS = 3
+MASTERY_FOR_SYNTHESIS = 0.80
+
+
+def adaptive_pass(session: Session, now: datetime | None = None) -> dict:
+    """Widen coverage where the evidence warrants it. Never narrows it.
+
+    §21.5 flags this as untested and possibly inflationary, so it returns what
+    it changed and why rather than working silently.
+    """
+    from ..models import ConceptEdge
+    from ..scheduling import mastery_of
+
+    added_debug: list[int] = []
+    added_synthesis: list[int] = []
+
+    concepts = session.exec(
+        select(Concept).where(Concept.deleted_at.is_(None),
+                              Concept.status != "archived")
+    ).all()
+
+    for concept in concepts:
+        items = {
+            i.dimension: i for i in session.exec(
+                select(ReviewItem).where(ReviewItem.concept_id == concept.id)
+            ).all()
+        }
+        profile = read_profile(concept)
+        changed = False
+
+        apply_item = items.get("apply")
+        if (apply_item is not None
+                and apply_item.lapses >= LAPSES_FOR_DEBUG
+                and not profile.get("debug")):
+            profile["debug"] = True
+            changed = True
+            added_debug.append(concept.id)
+
+        if not profile.get("synthesis"):
+            edges = session.exec(
+                select(ConceptEdge).where(
+                    ConceptEdge.status == "accepted",
+                    ConceptEdge.deleted_at.is_(None),
+                )
+            ).all()
+            degree = sum(
+                1 for e in edges
+                if concept.id in (e.source_concept_id, e.target_concept_id)
+            )
+            explain = items.get("explain")
+            apply_ = items.get("apply")
+            if (degree >= EDGES_FOR_SYNTHESIS
+                    and explain is not None and apply_ is not None
+                    and mastery_of(session, explain, now).mastery > MASTERY_FOR_SYNTHESIS
+                    and mastery_of(session, apply_, now).mastery > MASTERY_FOR_SYNTHESIS):
+                profile["synthesis"] = True
+                changed = True
+                added_synthesis.append(concept.id)
+
+        if changed:
+            concept.coverage_profile_json = json.dumps(profile)
+            concept.updated_at = _now()
+            session.add(concept)
+            session.flush()
+            ensure_review_items(session, concept)
+
+    if added_debug or added_synthesis:
+        log.info("Adaptive coverage added debug to %s and synthesis to %s "
+                 "concept(s)", len(added_debug), len(added_synthesis))
+    return {"added_debug": added_debug, "added_synthesis": added_synthesis}

@@ -14,6 +14,7 @@ from . import (
     resources,
     search,
     settings,
+    usage,
 )
 
 api_router = APIRouter(prefix="/api")
@@ -29,6 +30,7 @@ api_router.include_router(revision.router, tags=["revision"])
 api_router.include_router(roadmap.router, tags=["roadmap"])
 api_router.include_router(search.router, tags=["search"])
 api_router.include_router(backup.router, tags=["backup"])
+api_router.include_router(usage.router, tags=["usage"])
 api_router.include_router(settings.router, tags=["settings"])
 
 __all__ = ["api_router"]

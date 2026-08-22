@@ -20,6 +20,20 @@ import { Practice } from './components/Practice'
 import { Revision } from './components/Revision'
 import { Roadmap, Todos } from './components/Roadmap'
 import { Graph } from './components/Graph'
+import { ShortcutOverlay, Usage } from './components/Usage'
+
+/** Is the event coming from somewhere the user is writing?
+ *
+ *  Written as a named function on purpose: the inline form
+ *  `!(e.target as HTMLElement)?.isContentEditable` parses as
+ *  `(!e.target)?.isContentEditable`, which is not what it looks like.
+ */
+function isTyping(target: EventTarget | null): boolean {
+  if (target instanceof HTMLInputElement) return true
+  if (target instanceof HTMLTextAreaElement) return true
+  if (target instanceof HTMLElement && target.isContentEditable) return true
+  return false
+}
 
 /** Spec §14.1 [LOCKED] — both sidebars auto-collapse below 900px. */
 const COLLAPSE_BELOW = 900
@@ -37,6 +51,8 @@ export function App() {
   const setAddDialog = useUI((s) => s.setAddDialog)
   const setResourceAdd = useUI((s) => s.setResourceAdd)
   const clearActive = useUI((s) => s.clearActive)
+
+  const [shortcutsOpen, setShortcutsOpen] = useState(false)
 
   const [narrow, setNarrow] = useState(
     () => typeof window !== 'undefined' && window.innerWidth < COLLAPSE_BELOW,
@@ -57,10 +73,17 @@ export function App() {
         e.preventDefault()
         setPalette(true)
       }
+      // §14.4 — a `?` overlay lists the shortcuts. A `?` typed into a note,
+      // a search box or an answer is a question mark, not a shortcut.
+      if (e.key === '?' && !isTyping(e.target)) {
+        e.preventDefault()
+        setShortcutsOpen(true)
+      }
       if (e.key === 'Escape') {
         setPalette(false)
         setAddDialog(false)
         setResourceAdd(false)
+        setShortcutsOpen(false)
       }
     }
     window.addEventListener('keydown', onKey)
@@ -109,6 +132,7 @@ export function App() {
       <CommandPalette />
       <AddDialog />
       <ResourceQuickAdd />
+      {shortcutsOpen && <ShortcutOverlay onClose={() => setShortcutsOpen(false)} />}
     </div>
   )
 }
@@ -132,6 +156,7 @@ function MainContent({ view, onView, activeNoteId, activeResourceId, activeDate,
   if (view === 'Roadmap') return <Roadmap />
   if (view === 'Todos') return <Todos />
   if (view === 'Graph') return <Graph />
+  if (view === 'Usage') return <Usage />
   if (view === 'Resources') return <ResourceList />
   if (view === 'Notes') return <NotesEmpty />
   return <Dashboard onView={onView} />

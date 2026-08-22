@@ -138,6 +138,43 @@ def retest_answer(session_id: int, payload: RetestAnswer,
         raise HTTPException(404, str(exc)) from None
 
 
+class InterviewMode(BaseModel):
+    enabled: bool
+
+
+@router.get("/revision/interview-mode")
+def get_interview_mode(session: Session = Depends(get_session)) -> dict:
+    from ..scheduling import interview_mode_on
+
+    return {"enabled": interview_mode_on(session)}
+
+
+@router.post("/revision/interview-mode")
+def set_interview_mode(payload: InterviewMode,
+                       session: Session = Depends(get_session)) -> dict:
+    """Spec §10.1 — one toggle unsuspends every interview review item."""
+    from ..scheduling import interview_mode_on
+    from ..scheduling import set_interview_mode as apply
+
+    changed = apply(session, payload.enabled)
+    return {"enabled": interview_mode_on(session), "items_changed": changed}
+
+
+@router.post("/revision/mock-round", status_code=201)
+def mock_round(payload: SessionCreate | None = None,
+               session: Session = Depends(get_session)) -> dict:
+    """Spec §18 Phase 10 — five interview questions across related concepts."""
+    count = payload.count if payload else revision.MOCK_ROUND_SIZE
+    try:
+        row = revision.mock_round(session, count)
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from None
+    except LookupError as exc:
+        raise HTTPException(409, str(exc)) from None
+    return {"id": row.id, "planned_count": row.planned_count,
+            "mock_round": True}
+
+
 @router.post("/revision/session/{session_id}/finish")
 def finish(session_id: int, session: Session = Depends(get_session)) -> dict:
     try:

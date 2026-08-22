@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
 import { api, type AppMeta } from '../lib/api'
@@ -6,10 +6,9 @@ import { api, type AppMeta } from '../lib/api'
 /** Spec §14 Settings. §17 puts the backup controls and the Markdown export
  *  here.
  *
- *  Model assignments, FSRS parameters, similarity thresholds, priority weights,
- *  session defaults, interview mode, FX rate and the monthly cap all belong to
- *  settings this app cannot yet act on, so they are named as coming rather than
- *  rendered as dead controls.
+ *  §10.1's interview toggle and §12.6's FX rate and soft monthly cap live here
+ *  too. Settings this build still cannot act on are named with the phase they
+ *  arrive in rather than rendered as dead controls.
  */
 export function Settings({ meta }: { meta: AppMeta | undefined }) {
   const qc = useQueryClient()
@@ -70,8 +69,8 @@ export function Settings({ meta }: { meta: AppMeta | undefined }) {
           )}
         </p>
         <p className="mt-2 text-[0.75rem] leading-relaxed text-faint">
-          No model is called yet. The first request goes out in Phase 5, and
-          every one is logged with its prompt version, model and token counts.
+          Every model call is logged with its prompt version, model and token
+          counts. Usage shows what they cost.
         </p>
       </Section>
 
@@ -159,13 +158,15 @@ export function Settings({ meta }: { meta: AppMeta | undefined }) {
         )}
       </Section>
 
+      <InterviewSection />
+      <BudgetSection />
+
       <Section title="Still to come">
         <ul className="space-y-1 text-[0.8125rem] text-faint">
           <Coming phase={4}>Similarity thresholds</Coming>
           <Coming phase={5}>Model assignments, prompt versions</Coming>
           <Coming phase={6}>Session defaults</Coming>
           <Coming phase={7}>FSRS parameters, priority weights</Coming>
-          <Coming phase={9}>FX rate, monthly cap, interview mode</Coming>
         </ul>
       </Section>
     </div>
@@ -196,4 +197,136 @@ function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`
   return `${(bytes / 1_048_576).toFixed(1)} MB`
+}
+
+
+/** Spec §10.1 — "A single Settings toggle, Interview mode, unsuspends them
+ *  all. Default off. Turn it on around month 4." */
+function InterviewSection() {
+  const qc = useQueryClient()
+  const { data } = useQuery({
+    queryKey: ['interview-mode'],
+    queryFn: api.interviewMode,
+  })
+  const toggle = useMutation({
+    mutationFn: (enabled: boolean) => api.setInterviewMode(enabled),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['interview-mode'] })
+      void qc.invalidateQueries({ queryKey: ['revision-dashboard'] })
+    },
+  })
+
+  return (
+    <Section title="Interview mode">
+      <label className="flex items-center gap-2 text-[0.8125rem] text-ink">
+        <input
+          type="checkbox"
+          checked={data?.enabled ?? false}
+          data-testid="interview-mode"
+          onChange={(e) => toggle.mutate(e.target.checked)}
+          className="size-4 accent-[var(--color-accent)]"
+        />
+        Include interview questions in revision
+      </label>
+      <p className="mt-2 text-[0.75rem] leading-relaxed text-muted">
+        Interview review items are created for every concept but stay suspended
+        until this is on. Turning it on unsuspends them all; turning it off
+        puts them back to sleep without losing their history.
+      </p>
+      {toggle.data && (
+        <p data-testid="interview-changed" className="mt-1 text-[0.75rem] text-faint">
+          {toggle.data.items_changed} item(s) changed.
+        </p>
+      )}
+    </Section>
+  )
+}
+
+/** Spec §12.6 — FX rate and the soft monthly cap. */
+function BudgetSection() {
+  const qc = useQueryClient()
+  const { data } = useQuery({ queryKey: ['settings'], queryFn: api.settings })
+  const [fx, setFx] = useState('')
+  const [cap, setCap] = useState('')
+
+  useEffect(() => {
+    if (!data) return
+    setFx(data.values.fx_rate_usd_to_gbp ? String(data.values.fx_rate_usd_to_gbp) : '')
+    setCap(data.values.monthly_cap_usd ? String(data.values.monthly_cap_usd) : '')
+  }, [data])
+
+  const save = useMutation({
+    mutationFn: (values: Record<string, unknown>) => api.patchSettings(values),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['settings'] })
+      void qc.invalidateQueries({ queryKey: ['usage'] })
+    },
+  })
+
+  const runAdaptive = useMutation({ mutationFn: api.adaptiveCoverage })
+
+  return (
+    <Section title="Budget">
+      <div className="grid gap-3 sm:grid-cols-2">
+        <label className="block">
+          <span className="mb-1 block text-[0.6875rem] font-medium text-ink-soft">
+            FX rate (1 USD in ₹)
+          </span>
+          <input
+            value={fx}
+            data-testid="fx-rate"
+            onChange={(e) => setFx(e.target.value)}
+            onBlur={() => save.mutate({
+              fx_rate_usd_to_gbp: fx ? Number(fx) : null,
+            })}
+            placeholder="83.5"
+            className="w-full rounded-md border border-line bg-paper px-2 py-1.5 text-[0.8125rem] text-ink outline-none focus:border-accent focus:bg-surface"
+          />
+        </label>
+        <label className="block">
+          <span className="mb-1 block text-[0.6875rem] font-medium text-ink-soft">
+            Monthly cap (USD)
+          </span>
+          <input
+            value={cap}
+            data-testid="monthly-cap"
+            onChange={(e) => setCap(e.target.value)}
+            onBlur={() => save.mutate({
+              monthly_cap_usd: cap ? Number(cap) : null,
+            })}
+            placeholder="20"
+            className="w-full rounded-md border border-line bg-paper px-2 py-1.5 text-[0.8125rem] text-ink outline-none focus:border-accent focus:bg-surface"
+          />
+        </label>
+      </div>
+      <p className="mt-2 text-[0.75rem] leading-relaxed text-muted">
+        The cap is a soft one. At 80% you get a note, at 100% a confirmation
+        before each run. Nothing is ever blocked — not being able to study
+        because of a budget setting would be worse than the overspend.
+      </p>
+
+      <div className="mt-3 border-t border-line-soft pt-3">
+        <button
+          type="button"
+          onClick={() => runAdaptive.mutate()}
+          disabled={runAdaptive.isPending}
+          data-testid="run-adaptive"
+          className="rounded-md border border-line bg-paper px-3 py-1.5 text-[0.8125rem] text-ink transition hover:border-accent disabled:opacity-50"
+        >
+          {runAdaptive.isPending ? 'Running…' : 'Widen coverage where earned'}
+        </button>
+        <p className="mt-2 text-[0.75rem] leading-relaxed text-muted">
+          Adds <code>debug</code> to concepts whose <code>apply</code> has
+          lapsed twice, and <code>synthesis</code> to well-connected concepts
+          you already explain and apply well. Never removes a dimension.
+        </p>
+        {runAdaptive.data && (
+          <p data-testid="adaptive-result" className="mt-1 text-[0.75rem] text-mastery-3">
+            Added debug to {runAdaptive.data.added_debug.length}, synthesis to{' '}
+            {runAdaptive.data.added_synthesis.length}.
+          </p>
+        )}
+      </div>
+    </Section>
+  )
 }

@@ -54,6 +54,9 @@ from .scheduling import (
 log = logging.getLogger(__name__)
 
 QUESTION_PROMPT_VERSION = "question_generation_v1"
+#: Spec §18 Phase 10 — "interview-specific prompt tuning". A separate
+#: version rather than an edit, per §11: never edit a prompt in place.
+INTERVIEW_PROMPT_VERSION = "question_generation_v2_interview"
 EVALUATION_PROMPT_VERSION = "evaluation_v1"
 
 #: Spec §9.6 — "Default revision session size is 5, not 10. Starting is the
@@ -290,7 +293,11 @@ def generate_question(session: DBSession, item: ReviewItem,
     """One question, written now (spec §9.2 — generation is lazy)."""
     provider = get_provider()
     cfg = task_config("question_generation")
-    system = load_prompt(QUESTION_PROMPT_VERSION)
+    # The interview dimension wants a different framing entirely, so it gets
+    # its own prompt version and that version is recorded on the artefact.
+    version = (INTERVIEW_PROMPT_VERSION if item.dimension == "interview"
+               else QUESTION_PROMPT_VERSION)
+    system = load_prompt(version)
 
     try:
         result = provider.generate_structured(
@@ -301,17 +308,17 @@ def generate_question(session: DBSession, item: ReviewItem,
             model=cfg["model"],
             schema=GeneratedQuestion,
             thinking_level=cfg.get("thinking_level"),
-            prompt_version=QUESTION_PROMPT_VERSION,
+            prompt_version=version,
         )
     except Exception as exc:
         record_run(session, task="question_generation", session_id=session_id,
-                   model=cfg["model"], prompt_version=QUESTION_PROMPT_VERSION,
+                   model=cfg["model"], prompt_version=version,
                    concept_id=item.concept_id, success=False,
                    error_text=str(exc)[:8000])
         raise
 
     record_run(session, task="question_generation", result=result,
-               session_id=session_id, prompt_version=QUESTION_PROMPT_VERSION,
+               session_id=session_id, prompt_version=version,
                concept_id=item.concept_id)
 
     parsed: GeneratedQuestion = result.parsed
@@ -335,7 +342,7 @@ def generate_question(session: DBSession, item: ReviewItem,
         difficulty=float(parsed.difficulty),
         source_note_ids_json=json.dumps(sorted(set(source_ids))),
         generation_reason=reason,
-        prompt_version=QUESTION_PROMPT_VERSION,
+        prompt_version=version,
         model=cfg["model"],
     )
     session.add(question)
@@ -906,3 +913,85 @@ def summary(session: DBSession, session_id: int) -> dict:
         "per_concept": list(per_concept.values()),
         "retest_offers": retest_offers(session, session_id),
     }
+
+
+# --------------------------------------------------------------------------
+# Phase 10 — Interview mode (spec §10.1, §18)
+# --------------------------------------------------------------------------
+
+MOCK_ROUND_SIZE = 5
+
+
+def mock_round(session: DBSession, count: int = MOCK_ROUND_SIZE,
+               subject_ids: tuple[int, ...] = ()) -> SessionRow:
+    """Spec §18 Phase 10 — "a 'mock round' session type that serves 5 interview
+    questions across related concepts".
+
+    "Across related concepts" is the point: a mock round should feel like one
+    interview about a connected area, not five unrelated questions. The round
+    is seeded with the highest-priority interview item, then walks its accepted
+    edges outward, falling back to priority order if the neighbourhood is
+    smaller than the round.
+    """
+    from .graph import neighbours_within
+    from .models import Concept as ConceptModel
+    from .scheduling import interview_mode_on, priority
+
+    if not interview_mode_on(session):
+        raise ValueError(
+            "Interview mode is off. Turn it on in Settings; it unsuspends "
+            "your interview review items."
+        )
+
+    candidates = [
+        item for item in due_items(session, subject_ids=subject_ids)
+        if item.dimension == "interview"
+    ]
+    if not candidates:
+        raise LookupError("No interview items are ready yet")
+
+    candidates.sort(key=lambda i: -priority(session, i))
+    seed = candidates[0]
+    near = neighbours_within(session, seed.concept_id, hops=2)
+
+    chosen: list[ReviewItem] = [seed]
+    seen_concepts = {seed.concept_id}
+    for item in candidates[1:]:
+        if len(chosen) >= count:
+            break
+        if item.concept_id in near and item.concept_id not in seen_concepts:
+            chosen.append(item)
+            seen_concepts.add(item.concept_id)
+    # Short neighbourhood: fill by priority so the round is still full.
+    for item in candidates[1:]:
+        if len(chosen) >= count:
+            break
+        if item.concept_id not in seen_concepts:
+            chosen.append(item)
+            seen_concepts.add(item.concept_id)
+
+    row = SessionRow(
+        session_type="revision",
+        scope_json=json.dumps({"subject_ids": list(subject_ids),
+                               "mock_round": True,
+                               "seed_concept_id": seed.concept_id}),
+        planned_count=len(chosen),
+        started_at=_now(),
+    )
+    session.add(row)
+    session.flush()
+
+    for position, item in enumerate(chosen):
+        session.add(SessionItem(
+            session_id=row.id,
+            position=position,
+            item_type="question",
+            review_item_id=item.id,
+            selection_bucket="due" if item.reps else "new",
+        ))
+    session.flush()
+
+    concept = session.get(ConceptModel, seed.concept_id)
+    log.info("Mock round of %s seeded from %s", len(chosen),
+             concept.canonical_name if concept else seed.concept_id)
+    return row

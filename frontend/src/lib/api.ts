@@ -337,6 +337,55 @@ export type ConceptRow = {
   importance?: number | null
 }
 
+export type UsageSummary = {
+  month: string
+  disclaimer: string
+  billing_console_url: string
+  spent_usd: number
+  spent_gbp: number | null
+  fx_rate: number | null
+  calls: number
+  input_tokens: number
+  output_tokens: number
+  cached_tokens: number
+  unpriced_calls: number
+  cap: {
+    month: string
+    spent_usd: number
+    cap_usd: number | null
+    ratio: number | null
+    level: 'none' | 'ok' | 'warn' | 'over'
+    requires_confirmation: boolean
+    unpriced_calls: number
+  }
+  daily: Array<{ date: string; usd: number }>
+  by_task: Array<{
+    task: string
+    calls: number
+    input_tokens: number
+    output_tokens: number
+    usd: number
+  }>
+}
+export type UsageConcept = {
+  concept_id: number
+  concept_name: string
+  generations: number
+  tokens: number
+  usd: number
+  gbp: number | null
+}
+export type Progress = {
+  concepts: number
+  stale_concepts: number
+  reviews: number
+  mcq_answers: number
+  mcq_correct: number
+  prose_answers: number
+  mastery_distribution: Record<string, number>
+  reviews_by_day: Array<{ date: string; count: number }>
+}
+
 export type SearchHit = {
   kind: 'note_block' | 'concept'
   note_id: number | null
@@ -605,6 +654,42 @@ export const api = {
       method: 'PATCH',
       body: JSON.stringify(body),
     }),
+
+  usageSummary: () => request<UsageSummary>('/api/usage/summary'),
+  usageByConcept: (limit = 50) =>
+    request<UsageConcept[]>(`/api/usage/by-concept?limit=${limit}`),
+  usageByHierarchy: () =>
+    request<{
+      by_subject: Array<{ subject: string; usd: number }>
+      by_topic: Array<{ subject: string; topic: string; usd: number }>
+    }>('/api/usage/by-hierarchy'),
+  progress: () => request<Progress>('/api/progress'),
+  interviewMode: () => request<{ enabled: boolean }>('/api/revision/interview-mode'),
+  setInterviewMode: (enabled: boolean) =>
+    request<{ enabled: boolean; items_changed: number }>(
+      '/api/revision/interview-mode',
+      { method: 'POST', body: JSON.stringify({ enabled }) },
+    ),
+  mockRound: () =>
+    request<{ id: number; planned_count: number }>('/api/revision/mock-round', {
+      method: 'POST',
+      body: JSON.stringify({ count: 5 }),
+    }),
+
+  settings: () =>
+    request<{ values: Record<string, unknown>; api_key: { present: boolean; source: string } }>(
+      '/api/settings',
+    ),
+  patchSettings: (values: Record<string, unknown>) =>
+    request<Record<string, unknown>>('/api/settings', {
+      method: 'PATCH',
+      body: JSON.stringify({ values }),
+    }),
+  adaptiveCoverage: () =>
+    request<{ added_debug: number[]; added_synthesis: number[] }>(
+      '/api/maintenance/adaptive-coverage',
+      { method: 'POST' },
+    ),
 
   search: (q: string) =>
     request<{ query: string; hits: SearchHit[] }>(`/api/search?q=${encodeURIComponent(q)}`),
