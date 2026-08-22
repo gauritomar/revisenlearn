@@ -99,6 +99,8 @@ def start_app(db_path: Path, *, seed_subjects: bool = False) -> AppProcess:
         # Tests must never pick up the developer's real key from creds/ or the
         # Keychain; credential resolution is asserted separately.
         "RNL_CREDS_DIR": str(db_path.parent / "no-creds"),
+        # Never let a test open a real browser window on the user's screen.
+        "RNL_NO_BROWSER": "1",
         "PYTHONUNBUFFERED": "1",
     }
     env.pop("GEMINI_API_KEY", None)

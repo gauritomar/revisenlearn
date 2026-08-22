@@ -96,6 +96,8 @@ class NoteCreate(BaseModel):
     subject_id: Optional[int] = None
     topic_id: Optional[int] = None
     subtopic_id: Optional[int] = None
+    #: When set, `POST /api/notes/ensure` returns the note for this resource
+    #: and day rather than the subtopic's own note (spec §5.1 split view).
     resource_id: Optional[int] = None
 
 
@@ -122,6 +124,69 @@ class BlocksSave(BaseModel):
     """Autosave payload — the full block list for the note (spec §4.1)."""
 
     blocks: list[BlockIn]
+
+
+# --- Resources -------------------------------------------------------------
+
+class TitleProbe(BaseModel):
+    url: str
+
+
+class TitleProbeResult(BaseModel):
+    """``title`` is None when the fetch failed for any reason — the client then
+    falls back to the raw URL (spec §5.1)."""
+
+    title: Optional[str] = None
+    resource_type: str = "other"
+
+
+class ResourceCreate(BaseModel):
+    #: One of these is required; everything else has a sensible default so the
+    #: add flow stays under five seconds (spec §5.1).
+    url: Optional[str] = None
+    title: Optional[str] = None
+    resource_type: Optional[str] = None
+    description: Optional[str] = None
+    status: str = "inbox"
+    priority: int = 0
+    subject_id: Optional[int] = None
+    topic_id: Optional[int] = None
+    subtopic_id: Optional[int] = None
+    progress_pct: int = Field(default=0, ge=0, le=100)
+    progress_note: Optional[str] = None
+
+
+class ResourceUpdate(BaseModel):
+    url: Optional[str] = None
+    title: Optional[str] = Field(default=None, min_length=1, max_length=500)
+    resource_type: Optional[str] = None
+    description: Optional[str] = None
+    status: Optional[str] = None
+    priority: Optional[int] = None
+    subject_id: Optional[int] = None
+    topic_id: Optional[int] = None
+    subtopic_id: Optional[int] = None
+    #: Spec §5 — set by hand with a slider. Never computed.
+    progress_pct: Optional[int] = Field(default=None, ge=0, le=100)
+    progress_note: Optional[str] = None
+
+
+class ResourceOut(BaseModel):
+    id: int
+    title: str
+    url: Optional[str] = None
+    resource_type: str
+    description: Optional[str] = None
+    status: str
+    priority: int
+    subject_id: Optional[int] = None
+    topic_id: Optional[int] = None
+    subtopic_id: Optional[int] = None
+    progress_pct: int
+    progress_note: Optional[str] = None
+    created_at: datetime
+    last_opened_at: Optional[datetime] = None
+    completed_at: Optional[datetime] = None
 
 
 # --- Search ----------------------------------------------------------------

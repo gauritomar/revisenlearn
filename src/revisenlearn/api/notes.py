@@ -15,7 +15,7 @@ from sqlmodel import Session, select
 
 from ..db import get_session, reindex_block
 from ..hashing import content_hash
-from ..models import Note, NoteBlock, Subject, Subtopic, Topic
+from ..models import Note, NoteBlock, Resource, Subject, Subtopic, Topic
 from .schemas import BlockOut, BlocksSave, NoteCreate, NoteOut, NoteUpdate
 
 router = APIRouter()
@@ -82,6 +82,15 @@ def _note_out(session: Session, note: Note) -> NoteOut:
 def _resolve_ancestry(session: Session, note: Note) -> None:
     """Denormalise subject/topic from the subtopic so notes are queryable by
     any level of the hierarchy without a join chain."""
+    if note.resource_id and not any(
+        (note.subtopic_id, note.topic_id, note.subject_id)
+    ):
+        # A resource-anchored note is filed wherever its resource is filed.
+        resource = session.get(Resource, note.resource_id)
+        if resource:
+            note.subtopic_id = resource.subtopic_id
+            note.topic_id = resource.topic_id
+            note.subject_id = resource.subject_id
     if note.subtopic_id and not note.topic_id:
         subtopic = session.get(Subtopic, note.subtopic_id)
         if subtopic:
@@ -94,7 +103,12 @@ def _resolve_ancestry(session: Session, note: Note) -> None:
 
 def _default_title(session: Session, note: Note) -> str:
     """A note is titled after its subtopic (spec §3's example: the note for
-    "Hybrid search" is called "Hybrid search")."""
+    "Hybrid search" is called "Hybrid search"), or after its resource when it
+    is anchored to one (spec §5.1)."""
+    if note.resource_id:
+        resource = session.get(Resource, note.resource_id)
+        if resource:
+            return resource.title
     if note.subtopic_id:
         st = session.get(Subtopic, note.subtopic_id)
         if st:
@@ -117,6 +131,7 @@ def list_notes(
     subtopic_id: int | None = Query(default=None),
     topic_id: int | None = Query(default=None),
     subject_id: int | None = Query(default=None),
+    resource_id: int | None = Query(default=None),
     study_date: date_cls | None = Query(default=None),
     session: Session = Depends(get_session),
 ) -> list[NoteOut]:
@@ -127,6 +142,8 @@ def list_notes(
         stmt = stmt.where(Note.topic_id == topic_id)
     if subject_id is not None:
         stmt = stmt.where(Note.subject_id == subject_id)
+    if resource_id is not None:
+        stmt = stmt.where(Note.resource_id == resource_id)
     if study_date is not None:
         stmt = stmt.where(Note.study_date == study_date)
     notes = session.exec(stmt.order_by(Note.study_date.desc(), Note.id.desc())).all()
@@ -165,15 +182,19 @@ def ensure_note(payload: NoteCreate,
     stmt = select(Note).where(
         Note.deleted_at.is_(None),
         Note.study_date == study_date,
-        Note.resource_id.is_(None),
     )
-    if payload.subtopic_id is not None:
-        stmt = stmt.where(Note.subtopic_id == payload.subtopic_id)
+    if payload.resource_id is not None:
+        # §5.1 — the note for that resource and today, created on the spot.
+        stmt = stmt.where(Note.resource_id == payload.resource_id)
+    elif payload.subtopic_id is not None:
+        stmt = stmt.where(Note.subtopic_id == payload.subtopic_id,
+                          Note.resource_id.is_(None))
     elif payload.topic_id is not None:
         stmt = stmt.where(Note.topic_id == payload.topic_id,
-                          Note.subtopic_id.is_(None))
+                          Note.subtopic_id.is_(None),
+                          Note.resource_id.is_(None))
     else:
-        raise HTTPException(400, "subtopic_id or topic_id is required")
+        raise HTTPException(400, "resource_id, subtopic_id or topic_id is required")
 
     existing = session.exec(stmt.order_by(Note.id)).first()
     if existing is not None:
