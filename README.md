@@ -166,9 +166,14 @@ with a rating derived in Python rather than by the model. Five is the default
 session and a session of one still counts. Both override buttons are always
 there for when the grader is being stupid.
 
-**Resources** is a library: file links under headings you name, tag them
-across those headings, and filter by tag. **Todos** is yours alone — select
-all, tick off in bulk, delete what has gone stale.
+**Resources** is a blank page. Write links, notes to self, anything you want
+to come back to — the same keys as any other note, and nothing else. It is
+never sent to the model and never counts as a day's study: a reading list is
+not something to be examined on.
+
+**Todos** is yours alone. One checkbox per row, which ticks a todo off; press
+**Select** when you want to act on several at once, and the row's checkbox
+becomes a selection box with Mark done, Mark open and Delete above it.
 
 The **Dashboard** opens with the calendar, and under it *Revise today*: what
 is due, grouped by the day you wrote it ("studied 3 days ago"), with that

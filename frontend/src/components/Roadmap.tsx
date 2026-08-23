@@ -700,9 +700,20 @@ export function Todos() {
   const qc = useQueryClient()
   const refresh = useRefreshEverything()
   const [hideCompleted, setHideCompleted] = useState(true)
-  /** Selection, keyed "kind-id". A todos list is something you manage in
-   *  bulk — tick off five things at once, clear out a stale week. */
+  /** Selection, keyed "kind-id", and whether we are selecting at all.
+   *
+   *  Two checkboxes on one row — one to select, one to tick off — is a
+   *  puzzle: neither is obviously the one you meant. So a row has exactly one
+   *  checkbox at a time. Normally it completes the todo, which is what a
+   *  checkbox next to a task means everywhere else; in Select mode it selects,
+   *  and the bulk actions appear. */
+  const [selecting, setSelecting] = useState(false)
   const [selected, setSelected] = useState<Set<string>>(new Set())
+
+  const stopSelecting = () => {
+    setSelecting(false)
+    setSelected(new Set())
+  }
   const [subjectId, setSubjectId] = useState<number | ''>('')
   const [dueOnly, setDueOnly] = useState(false)
   const [title, setTitle] = useState('')
@@ -756,14 +767,14 @@ export function Todos() {
         } else await api.toggleChecklistItem(entry.id, done)
       }
     },
-    onSuccess: async () => { setSelected(new Set()); await refresh() },
+    onSuccess: async () => { stopSelecting(); await refresh() },
   })
 
   const bulkDelete = useMutation({
     mutationFn: async () => {
       for (const id of selectedTodoIds) await api.deleteTodo(id)
     },
-    onSuccess: async () => { setSelected(new Set()); await refresh() },
+    onSuccess: async () => { stopSelecting(); await refresh() },
   })
 
   const toggle = useMutation({
@@ -862,62 +873,76 @@ export function Todos() {
       ) : (
         <>
         <div className="mt-4 flex flex-wrap items-center gap-2 border-b border-line-soft pb-2">
-          <label className="flex items-center gap-1.5 text-[0.75rem] text-muted">
-            <input
-              type="checkbox"
-              data-testid="todo-select-all"
-              checked={allSelected}
-              ref={(el) => { if (el) el.indeterminate = someSelected && !allSelected }}
-              onChange={(e) => {
-                setSelected(e.target.checked
-                  ? new Set((data?.entries ?? []).map(keyOf))
-                  : new Set())
-              }}
-              className="size-3.5 accent-[var(--color-accent)]"
-            />
-            Select all
-          </label>
+          {selecting ? (
+            <>
+              <label className="flex items-center gap-1.5 text-[0.75rem] text-muted">
+                <input
+                  type="checkbox"
+                  data-testid="todo-select-all"
+                  checked={allSelected}
+                  ref={(el) => { if (el) el.indeterminate = someSelected && !allSelected }}
+                  onChange={(e) => {
+                    setSelected(e.target.checked
+                      ? new Set((data?.entries ?? []).map(keyOf))
+                      : new Set())
+                  }}
+                  className="size-3.5 accent-[var(--color-accent)]"
+                />
+                Select all
+              </label>
 
-          {selected.size > 0 && (
-            <span data-testid="todo-selection" className="flex flex-wrap items-center gap-2 text-[0.75rem]">
-              <span className="text-muted">{selected.size} selected</span>
-              <button
-                type="button"
-                onClick={() => bulkDone.mutate(true)}
-                data-testid="todo-bulk-done"
-                className="rounded border border-emerald-600 px-2 py-0.5 text-emerald-700 transition hover:bg-emerald-50"
-              >
-                Mark done
-              </button>
-              <button
-                type="button"
-                onClick={() => bulkDone.mutate(false)}
-                data-testid="todo-bulk-open"
-                className="rounded border border-amber-500 px-2 py-0.5 text-amber-700 transition hover:bg-amber-50"
-              >
-                Mark open
-              </button>
-              {/* Only standalone todos can be deleted from here: a lesson or a
-                  checklist item shown on this board lives somewhere else, and
-                  removing it from a view of it is the wrong place to do it. */}
-              {selectedTodoIds.length > 0 && (
+              <span data-testid="todo-selection" className="flex flex-wrap items-center gap-2 text-[0.75rem]">
+                <span className="text-muted">{selected.size} selected</span>
                 <button
                   type="button"
+                  disabled={selected.size === 0}
+                  onClick={() => bulkDone.mutate(true)}
+                  data-testid="todo-bulk-done"
+                  className="rounded border border-emerald-600 px-2 py-0.5 text-emerald-700 transition hover:bg-emerald-50 disabled:opacity-40"
+                >
+                  Mark done
+                </button>
+                <button
+                  type="button"
+                  disabled={selected.size === 0}
+                  onClick={() => bulkDone.mutate(false)}
+                  data-testid="todo-bulk-open"
+                  className="rounded border border-amber-500 px-2 py-0.5 text-amber-700 transition hover:bg-amber-50 disabled:opacity-40"
+                >
+                  Mark open
+                </button>
+                {/* Only standalone todos can be deleted from here: a lesson or
+                    a checklist item on this board is a view of something that
+                    lives elsewhere. */}
+                <button
+                  type="button"
+                  disabled={selectedTodoIds.length === 0}
                   onClick={() => bulkDelete.mutate()}
                   data-testid="todo-bulk-delete"
-                  className="rounded border border-stale px-2 py-0.5 text-stale transition hover:bg-stale-wash"
+                  className="rounded border border-stale px-2 py-0.5 text-stale transition hover:bg-stale-wash disabled:opacity-40"
                 >
-                  Delete {selectedTodoIds.length} todo{selectedTodoIds.length === 1 ? '' : 's'}
+                  Delete{selectedTodoIds.length > 0 ? ` ${selectedTodoIds.length}` : ''}
                 </button>
-              )}
+              </span>
+
               <button
                 type="button"
-                onClick={() => setSelected(new Set())}
-                className="px-1 text-muted transition hover:text-ink"
+                onClick={stopSelecting}
+                data-testid="todo-select-done"
+                className="ml-auto rounded px-2 py-0.5 text-[0.75rem] text-muted transition hover:bg-sunken hover:text-ink"
               >
-                Clear
+                Done
               </button>
-            </span>
+            </>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setSelecting(true)}
+              data-testid="todo-select-mode"
+              className="ml-auto rounded px-2 py-0.5 text-[0.75rem] text-muted transition hover:bg-sunken hover:text-ink"
+            >
+              Select
+            </button>
           )}
         </div>
 
@@ -935,29 +960,32 @@ export function Todos() {
                 entry.done ? 'bg-emerald-50/70' : 'bg-amber-50/60',
               ].join(' ')}
             >
-              <input
-                type="checkbox"
-                checked={selected.has(keyOf(entry))}
-                onChange={(e) => {
-                  setSelected((current) => {
-                    const next = new Set(current)
-                    if (e.target.checked) next.add(keyOf(entry))
-                    else next.delete(keyOf(entry))
-                    return next
-                  })
-                }}
-                data-testid={`select-${entry.kind}-${entry.id}`}
-                aria-label={`Select ${entry.title}`}
-                className="size-3.5 shrink-0 accent-[var(--color-accent)]"
-              />
-              <input
-                type="checkbox"
-                checked={entry.done}
-                onChange={() => toggle.mutate(entry)}
-                data-testid={`done-${entry.kind}-${entry.id}`}
-                aria-label={entry.title}
-                className={`size-3.5 shrink-0 ${entry.done ? 'accent-emerald-600' : 'accent-amber-500'}`}
-              />
+              {selecting ? (
+                <input
+                  type="checkbox"
+                  checked={selected.has(keyOf(entry))}
+                  onChange={(e) => {
+                    setSelected((current) => {
+                      const next = new Set(current)
+                      if (e.target.checked) next.add(keyOf(entry))
+                      else next.delete(keyOf(entry))
+                      return next
+                    })
+                  }}
+                  data-testid={`select-${entry.kind}-${entry.id}`}
+                  aria-label={`Select ${entry.title}`}
+                  className="size-3.5 shrink-0 accent-[var(--color-accent)]"
+                />
+              ) : (
+                <input
+                  type="checkbox"
+                  checked={entry.done}
+                  onChange={() => toggle.mutate(entry)}
+                  data-testid={`done-${entry.kind}-${entry.id}`}
+                  aria-label={entry.title}
+                  className={`size-3.5 shrink-0 ${entry.done ? 'accent-emerald-600' : 'accent-amber-500'}`}
+                />
+              )}
               <span className={`min-w-0 flex-1 truncate text-[0.8125rem] ${entry.done ? 'text-faint line-through' : 'text-ink'}`}>
                 {entry.title}
               </span>
@@ -973,7 +1001,7 @@ export function Todos() {
                   removed. A lesson or a checklist item is a view of something
                   that lives elsewhere; deleting it here would be deleting the
                   lesson, or the line in a note, from the wrong place. */}
-              {entry.kind === 'todo' && (
+              {entry.kind === 'todo' && !selecting && (
                 <DeleteTodo id={entry.id} title={entry.title} />
               )}
               {entry.due_date && (

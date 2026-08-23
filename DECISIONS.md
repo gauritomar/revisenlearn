@@ -910,7 +910,50 @@ important outstanding item in this repo.
 
 ---
 
-## 14. What is not built
+## 14. Two things I built too much of
+
+### The resource library became a page
+
+I built headings, tags, filters and a status pill for saving links. The answer
+was: *"let's not keep it as boxes rather just a place to write a note … just a
+blank page to write and save resources I want to work on later."*
+
+So the screen is a note, with the same keys as every other note and nothing
+else. `notes.scratch_key` marks it: one per key, hanging off nothing in the
+tree, excluded from the pipeline and from the calendar — "obviously it is not
+to be tested on", and a reading list is not a day's study either. Opening it
+for the first time carries across whatever resources were already saved, as
+editable lines: a page that opens empty on someone who has been collecting
+links for a week has lost their work, whatever the database says.
+
+The `resource_groups` table and `resources.group_id` are dropped — a day old
+and empty. `tags` and `taggings` stay: they are spec §6 tables that predate
+this, and they hold the user's own labels. The Resource *records* stay too,
+because they are load-bearing elsewhere — a URL in a study note is still
+detected (§4), the split view still opens against one, the dashboard still
+ranks what to study next. What went away is this screen being their filing
+cabinet.
+
+The paste-a-link dialog went too. Nothing opened it any more once the library
+was gone, and an unreachable dialog is not a feature — saving a link is
+writing it on the page now.
+
+The lesson worth keeping: "add tags and groups" described a mechanism, and I
+built the mechanism. What was wanted was somewhere to put a link without
+thinking about it.
+
+### One checkbox per row
+
+Adding bulk selection to Todos put two checkboxes on every row — one to
+select, one to tick off — and *"this is confusing"* is exactly right: neither
+is obviously the one you meant. Selecting is a mode now. Normally a row has
+one checkbox and it completes the todo, which is what a checkbox next to a
+task means everywhere else. Press **Select** and that same box becomes a
+selection box, with the bulk actions above it. Never two at once.
+
+---
+
+## 15. What is not built
 
 Honest list, so nothing here is a surprise.
 

@@ -10,7 +10,6 @@ import { Dashboard } from './components/Dashboard'
 import { NoteEditor } from './components/NoteEditor'
 import { CommandPalette } from './components/CommandPalette'
 import { AddDialog } from './components/AddDialog'
-import { ResourceQuickAdd } from './components/ResourceQuickAdd'
 import { ResourceList } from './components/ResourceList'
 import { ResourceSplitView } from './components/ResourceSplitView'
 import { DayView } from './components/Calendar'
@@ -54,7 +53,6 @@ export function App() {
   const activeDate = useUI((s) => s.activeDate)
   const setPalette = useUI((s) => s.setPalette)
   const setAddDialog = useUI((s) => s.setAddDialog)
-  const setResourceAdd = useUI((s) => s.setResourceAdd)
   const clearActive = useUI((s) => s.clearActive)
 
   const [shortcutsOpen, setShortcutsOpen] = useState(false)
@@ -89,13 +87,12 @@ export function App() {
       if (e.key === 'Escape') {
         setPalette(false)
         setAddDialog(false)
-        setResourceAdd(false)
         setShortcutsOpen(false)
       }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [setPalette, setAddDialog, setResourceAdd])
+  }, [setPalette, setAddDialog])
 
   // Below 900px the sidebars overlay the content rather than squeezing it, so
   // the editor stays the dominant element and the page never scrolls sideways.
@@ -156,7 +153,6 @@ export function App() {
 
       <CommandPalette />
       <AddDialog />
-      <ResourceQuickAdd />
       {shortcutsOpen && <ShortcutOverlay onClose={() => setShortcutsOpen(false)} />}
     </div>
   )

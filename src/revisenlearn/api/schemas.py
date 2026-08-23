@@ -196,12 +196,6 @@ class TagIn(BaseModel):
     colour: Optional[str] = None
 
 
-class ResourceGroupIn(BaseModel):
-    name: str = Field(min_length=1, max_length=120)
-    colour: Optional[str] = None
-    position: Optional[int] = None
-
-
 class ResourceCreate(BaseModel):
     #: One of these is required; everything else has a sensible default so the
     #: add flow stays under five seconds (spec §5.1).
@@ -216,7 +210,6 @@ class ResourceCreate(BaseModel):
     subtopic_id: Optional[int] = None
     progress_pct: int = Field(default=0, ge=0, le=100)
     progress_note: Optional[str] = None
-    group_id: Optional[int] = None
 
 
 class ResourceUpdate(BaseModel):
@@ -232,24 +225,13 @@ class ResourceUpdate(BaseModel):
     #: Spec §5 — set by hand with a slider. Never computed.
     progress_pct: Optional[int] = Field(default=None, ge=0, le=100)
     progress_note: Optional[str] = None
-    #: Null files it back under no heading, which is a real choice.
-    group_id: Optional[int] = None
+
 
 
 class TagOut(BaseModel):
     id: int
     name: str
     colour: Optional[str] = None
-
-
-class ResourceGroupOut(BaseModel):
-    """A heading in the library."""
-
-    id: int
-    name: str
-    colour: Optional[str] = None
-    position: int
-    resource_count: int = 0
 
 
 class ResourceOut(BaseModel):
@@ -265,8 +247,7 @@ class ResourceOut(BaseModel):
     subtopic_id: Optional[int] = None
     progress_pct: int
     progress_note: Optional[str] = None
-    #: The heading it is filed under, and what it is about.
-    group_id: Optional[int] = None
+    #: What it is about. Tags survived the library rework; headings did not.
     tags: list[TagOut] = []
     created_at: datetime
     last_opened_at: Optional[datetime] = None

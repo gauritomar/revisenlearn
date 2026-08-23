@@ -26,7 +26,6 @@ type UIState = {
   addDialogOpen: boolean
   /** What ⌘K had typed when the quick-add was opened from it (§5). */
   addSeed: string
-  resourceAddOpen: boolean
   /** §6 — which right-panel tab is showing, and whether a finished job is
    *  waiting behind another tab. A job must never steal the tab. */
   rightTab: RightTab
@@ -62,7 +61,6 @@ type UIState = {
   setPalette: (open: boolean) => void
   setAddDialog: (open: boolean) => void
   openAddWith: (name: string) => void
-  setResourceAdd: (open: boolean) => void
   setRightTab: (tab: RightTab) => void
   setPipelineBadge: (on: boolean) => void
   setNarrowPanel: (panel: 'left' | 'right' | null) => void
@@ -93,7 +91,6 @@ export const useUI = create<UIState>()(
       paletteOpen: false,
       addDialogOpen: false,
       addSeed: '',
-      resourceAddOpen: false,
       rightTab: 'checklist',
       pipelineBadge: false,
       narrowPanel: null,
@@ -188,7 +185,6 @@ export const useUI = create<UIState>()(
       setPalette: (open) => set({ paletteOpen: open }),
       setAddDialog: (open) => set({ addDialogOpen: open, addSeed: '' }),
       openAddWith: (name) => set({ addDialogOpen: true, addSeed: name, paletteOpen: false }),
-      setResourceAdd: (open) => set({ resourceAddOpen: open }),
       // §6 — switching tab by hand clears the badge; a finished job sets it
       // but never moves the user off what they were reading.
       setRightTab: (tab) =>

@@ -342,7 +342,9 @@ def test_todos_can_be_deleted_and_bulk_managed(page, app) -> None:
         timeout=10_000,
     )
 
-    # Select all, then finish the rest in one go.
+    # Select all, then finish the rest in one go. Selecting is a mode, so a
+    # row never shows two checkboxes at once.
+    page.get_by_test_id("todo-select-mode").click()
     page.get_by_test_id("todo-select-all").check()
     page.get_by_test_id("todo-selection").wait_for(state="visible")
     page.get_by_test_id("todo-bulk-done").click()
@@ -366,6 +368,7 @@ def test_selected_todos_can_be_deleted_together(page, app) -> None:
     page.get_by_test_id("nav-todos").click()
     page.get_by_test_id("todo-entries").wait_for(state="visible")
 
+    page.get_by_test_id("todo-select-mode").click()
     page.get_by_test_id("todo-select-all").check()
     page.get_by_test_id("todo-bulk-delete").click()
 
@@ -378,75 +381,74 @@ def test_selected_todos_can_be_deleted_together(page, app) -> None:
     )[0][0] == 2
 
 
-def test_resources_group_under_headings_and_carry_tags(page, app) -> None:
-    """"Add some type to resources like tags and be able to group resources
-    under different headings and within each it should be able to have certain
-    tags.\""""
+def test_a_todo_row_never_shows_two_checkboxes(page, app) -> None:
+    """"The todos have 2 tickboxes now, one to select and one to cross — this
+    is confusing." One at a time: normally it completes the todo, and in
+    Select mode it selects."""
+    with httpx.Client(base_url=app.base_url, timeout=30) as c:
+        c.post("/api/todos", json={"title": "Redo resume"})
+
+    page.reload(wait_until="networkidle")
+    page.get_by_test_id("nav-todos").click()
+    page.get_by_test_id("todo-entries").wait_for(state="visible")
+    todo_id = app.query("SELECT id FROM todos")[0][0]
+
+    row = page.get_by_test_id(f"entry-todo-{todo_id}")
+    assert row.locator("input[type=checkbox]").count() == 1
+    assert page.get_by_test_id(f"done-todo-{todo_id}").count() == 1
+    assert page.get_by_test_id(f"select-todo-{todo_id}").count() == 0
+
+    page.get_by_test_id("todo-select-mode").click()
+    page.get_by_test_id(f"select-todo-{todo_id}").wait_for(state="visible")
+    assert row.locator("input[type=checkbox]").count() == 1
+    assert page.get_by_test_id(f"done-todo-{todo_id}").count() == 0
+
+    # Leaving the mode puts the completion box back.
+    page.get_by_test_id("todo-select-done").click()
+    page.get_by_test_id(f"done-todo-{todo_id}").wait_for(state="visible")
+
+
+def test_resources_is_a_page_you_write_on(page, app) -> None:
+    """"Let's not keep it as boxes rather just a place to write a note … just
+    a blank page to write and save resources I want to work on later." """
     with httpx.Client(base_url=app.base_url, timeout=30) as c:
         c.post("/api/resources", json={"title": "NeetCode roadmap",
                                        "url": "https://neetcode.io/roadmap"})
-        c.post("/api/resources", json={"title": "CS50"})
 
     page.reload(wait_until="networkidle")
     page.get_by_test_id("nav-resources").click()
     page.get_by_test_id("resource-list").wait_for(state="visible")
 
-    # Everything starts unfiled, which is an honest shelf of its own.
-    page.get_by_test_id("shelf-ungrouped").wait_for(state="visible")
+    # A note, not a filing system.
+    page.get_by_test_id("note-editor").wait_for(state="visible")
+    assert page.get_by_test_id("note-title").inner_text() == "Resources"
+    for gone in ("add-group", "tag-filters", "filter-active", "add-resource"):
+        assert page.get_by_test_id(gone).count() == 0, gone
 
-    page.get_by_test_id("add-group").click()
-    page.get_by_test_id("new-group-name").fill("Interview prep")
+    # What was already saved came across, and can be edited like any line.
+    page.wait_for_function(
+        "() => document.querySelector('[data-testid=note-editor]')"
+        "?.innerText.includes('NeetCode roadmap')",
+        timeout=10_000,
+    )
+
+    editor = page.get_by_test_id("note-editor")
+    editor.click()
+    page.keyboard.press("Control+End")
+    page.keyboard.press("End")
     page.keyboard.press("Enter")
+    page.keyboard.type("Read the KMP chapter")
+    page.keyboard.press("Control+s")
     page.wait_for_function(
-        "() => document.body.innerText.includes('INTERVIEW PREP')"
-        " || document.body.innerText.includes('Interview prep')",
+        "() => document.querySelector('[data-testid=save-status]')"
+        "?.dataset.state === 'saved'",
         timeout=10_000,
     )
-    group_id = app.query("SELECT id FROM resource_groups")[0][0]
 
-    # File one under it.
-    resource_id = app.query("SELECT id FROM resources ORDER BY id")[0][0]
-    page.get_by_test_id(f"file-{resource_id}").select_option(str(group_id))
-    page.wait_for_function(
-        f"() => !!document.querySelector('[data-testid=\"shelf-{group_id}\"] "
-        f"[data-testid=\"resource-{resource_id}\"]')",
-        timeout=10_000,
-    )
-    assert app.query("SELECT group_id FROM resources WHERE id = ?",
-                     (resource_id,))[0][0] == group_id
-
-    # Tag it, and filter the whole library by that tag.
-    page.get_by_test_id(f"add-tag-{resource_id}").click()
-    page.get_by_test_id(f"tag-input-{resource_id}").fill("dsa")
-    page.keyboard.press("Enter")
-    page.get_by_test_id(f"resource-{resource_id}-tag-dsa").wait_for(state="visible",
-                                                                    timeout=10_000)
-
-    page.get_by_test_id("tag-filter-dsa").click()
-    page.wait_for_function(
-        "() => document.querySelectorAll('[data-testid^=\"resource-\"][data-testid$=\"\"]')"
-        ".length >= 0",
-        timeout=5_000,
-    )
-    page.wait_for_timeout(600)
-    titles = page.get_by_test_id("resource-list").inner_text()
-    assert "NeetCode" in titles and "CS50" not in titles
-
-
-def test_deleting_a_heading_keeps_the_resources(page, app) -> None:
-    """Deleting a shelf is not deleting the books on it."""
-    with httpx.Client(base_url=app.base_url, timeout=30) as c:
-        group = c.post("/api/resource-groups", json={"name": "Courses"}).json()
-        c.post("/api/resources", json={"title": "CS50", "group_id": group["id"]})
-
-    page.reload(wait_until="networkidle")
-    page.get_by_test_id("nav-resources").click()
-    page.get_by_test_id(f"shelf-{group['id']}").wait_for(state="visible")
-
-    page.get_by_test_id(f"delete-group-{group['id']}").click()
-    page.wait_for_function(
-        f"() => !document.querySelector('[data-testid=\"shelf-{group['id']}\"]')",
-        timeout=10_000,
-    )
-    assert app.query("SELECT count(*) FROM resources WHERE deleted_at IS NULL")[0][0] == 1
-    assert app.query("SELECT group_id FROM resources")[0][0] is None
+    # Written down, and still not something to be examined on.
+    assert app.query(
+        "SELECT count(*) FROM note_blocks nb JOIN notes n ON n.id = nb.note_id "
+        "WHERE n.scratch_key = 'resources' AND nb.text LIKE '%KMP%'"
+    )[0][0] == 1
+    page.get_by_test_id("process-notes").wait_for(state="visible")
+    assert page.get_by_test_id("process-notes").get_attribute("data-pending") == "0"

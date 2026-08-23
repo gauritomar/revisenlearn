@@ -140,14 +140,6 @@ export type ResourceStatus = 'inbox' | 'next' | 'in_progress' | 'completed' | 'a
 
 export type Tag = { id: number; name: string; colour: string | null }
 
-export type ResourceGroup = {
-  id: number
-  name: string
-  colour: string | null
-  position: number
-  resource_count: number
-}
-
 export type Resource = {
   id: number
   title: string
@@ -161,8 +153,7 @@ export type Resource = {
   subtopic_id: number | null
   progress_pct: number
   progress_note: string | null
-  /** The heading it is filed under, and what it is about. */
-  group_id: number | null
+  /** What it is about. */
   tags: Tag[]
   created_at: string
   last_opened_at: string | null
@@ -623,6 +614,8 @@ export const api = {
 
   page: (kind: TreeKind, id: number) =>
     request<PageDetail>(`/api/pages/${kind}/${id}`),
+  /** A blank page that is not study material — the Resources list. */
+  scratchNote: (key: string) => request<Note>(`/api/notes/scratch/${key}`),
 
   /** §3 — a lesson's one continuous note, created on first visit. */
   ensureLessonNote: (lesson_id: number) =>
@@ -665,18 +658,6 @@ export const api = {
     parent_index?: number | null
   }>) =>
     request<Note>(`/api/notes/${id}/blocks`, { method: 'PUT', body: JSON.stringify({ blocks }) }),
-
-  resourceGroups: () => request<ResourceGroup[]>('/api/resource-groups'),
-  createResourceGroup: (name: string) =>
-    request<ResourceGroup>('/api/resource-groups', {
-      method: 'POST', body: JSON.stringify({ name }),
-    }),
-  renameResourceGroup: (id: number, name: string) =>
-    request<ResourceGroup>(`/api/resource-groups/${id}`, {
-      method: 'PATCH', body: JSON.stringify({ name }),
-    }),
-  deleteResourceGroup: (id: number) =>
-    request<void>(`/api/resource-groups/${id}`, { method: 'DELETE' }),
 
   tags: () => request<Tag[]>('/api/tags'),
   tagResource: (resourceId: number, name: string) =>

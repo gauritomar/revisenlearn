@@ -21,7 +21,7 @@ const KEYS = [
   'lesson-checklist',
   'pipeline-pending',
   'resources',
-  'resource-groups',
+  'scratch',
   'tags',
   'study-next',
   'progress',

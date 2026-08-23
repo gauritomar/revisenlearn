@@ -686,3 +686,55 @@ def note_panel(note_id: int, session: Session = Depends(get_session)) -> dict:
             "resources": len(resources),
         },
     }
+
+
+# --------------------------------------------------------------------------
+# Scratch pages
+# --------------------------------------------------------------------------
+
+SCRATCH_TITLES = {"resources": "Resources"}
+
+
+@router.get("/notes/scratch/{key}", response_model=NoteOut)
+def scratch_note(key: str, session: Session = Depends(get_session)) -> NoteOut:
+    """A blank page to write on that is not study material.
+
+    "Just a place to write a note but obviously it is not to be tested on,
+    just a blank page to write and save resources I want to work on later."
+
+    So: one note per key, hanging off nothing in the tree, never sent to the
+    model, never counted as a day's work. Created on first visit like any
+    other page.
+    """
+    if key not in SCRATCH_TITLES:
+        raise HTTPException(404, f"No scratch page called {key!r}")
+
+    existing = session.exec(
+        select(Note).where(Note.scratch_key == key, Note.deleted_at.is_(None))
+        .order_by(Note.id)
+    ).first()
+    if existing is not None:
+        return _note_out(session, existing)
+
+    note = Note(title=SCRATCH_TITLES[key], study_date=date_cls.today(),
+                scratch_key=key)
+    session.add(note)
+    session.flush()
+
+    # Carry across whatever was already saved, so the page does not open empty
+    # on someone who has been collecting links for a week.
+    if key == "resources":
+        saved = session.exec(
+            select(Resource).where(Resource.deleted_at.is_(None))
+            .order_by(Resource.created_at)
+        ).all()
+        for position, resource in enumerate(saved):
+            text = f"{resource.title} — {resource.url}" if resource.url else resource.title
+            session.add(NoteBlock(
+                note_id=note.id, position=position,
+                block_type="bullet_list_item", text=text,
+                url=resource.url, content_hash=content_hash(text),
+            ))
+        session.flush()
+
+    return _note_out(session, note)

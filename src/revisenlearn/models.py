@@ -102,26 +102,6 @@ class Subtopic(SQLModel, table=True):
     deleted_at: Optional[datetime] = None
 
 
-class ResourceGroup(SQLModel, table=True):
-    """A heading in the resource library.
-
-    The user's shelf, named by them: "be able to group resources under
-    different headings and within each it should be able to have certain
-    tags". A resource belongs to at most one group — a heading is where a
-    thing is filed, while tags are what it is about, and one of those has to
-    be singular for the library to have a shape.
-    """
-
-    __tablename__ = "resource_groups"
-
-    id: Optional[int] = Field(default=None, primary_key=True)
-    name: str = Field(index=True)
-    colour: Optional[str] = None
-    position: int = 0
-    created_at: datetime = Field(default_factory=utcnow)
-    deleted_at: Optional[datetime] = None
-
-
 class Tag(SQLModel, table=True):
     __tablename__ = "tags"
 
@@ -160,6 +140,11 @@ class Note(SQLModel, table=True):
     #: `lesson_id IS NULL` remains a perfectly valid freeform note.
     lesson_id: Optional[int] = Field(default=None, foreign_key="lessons.id",
                                      index=True)
+    #: A scratch page: a place to write that is not study material. There is
+    #: one per key ("resources"), it hangs off nothing in the tree, and its
+    #: blocks are never sent to the model or counted as a day's work — the
+    #: user's words: "obviously it is not to be tested on".
+    scratch_key: Optional[str] = Field(default=None, index=True)
     created_at: datetime = Field(default_factory=utcnow)
     updated_at: datetime = Field(default_factory=utcnow)
     deleted_at: Optional[datetime] = None
@@ -211,9 +196,6 @@ class Resource(SQLModel, table=True):
     description: Optional[str] = Field(default=None, sa_column=Column(Text))
     status: str = "inbox"
     priority: int = 0
-    #: The heading this is filed under in the library, if any.
-    group_id: Optional[int] = Field(default=None, foreign_key="resource_groups.id",
-                                    index=True)
     subject_id: Optional[int] = Field(default=None, foreign_key="subjects.id")
     topic_id: Optional[int] = Field(default=None, foreign_key="topics.id")
     subtopic_id: Optional[int] = Field(default=None, foreign_key="subtopics.id")

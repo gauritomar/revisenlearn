@@ -708,3 +708,73 @@ def test_a_lesson_can_be_marked_for_revisiting(client) -> None:
     assert updated["status"] == "revisit"
     assert client.patch(f"/api/lessons/{tree['lesson']['id']}",
                         json={"status": "banana"}).status_code == 400
+
+
+# --------------------------------------------------------------------------
+# The Resources page: a place to write, not study material
+# --------------------------------------------------------------------------
+
+def test_the_resources_page_is_a_note(client) -> None:
+    """"Just a place to write a note … just a blank page to write and save
+    resources I want to work on later." Created on first visit, one per key,
+    hanging off nothing in the tree."""
+    page = client.get("/api/notes/scratch/resources").json()
+
+    assert page["title"] == "Resources"
+    assert (page["subject_id"], page["topic_id"], page["subtopic_id"],
+            page["lesson_id"]) == (None, None, None, None)
+
+    again = client.get("/api/notes/scratch/resources").json()
+    assert again["id"] == page["id"]
+
+
+def test_what_was_already_saved_is_carried_across(client) -> None:
+    """A page that opens empty on someone who has been collecting links for a
+    week has lost their work, whatever the database says."""
+    client.post("/api/resources", json={"title": "NeetCode roadmap",
+                                        "url": "https://neetcode.io/roadmap"})
+    client.post("/api/resources", json={"title": "CS50"})
+
+    page = client.get("/api/notes/scratch/resources").json()
+
+    lines = [b["text"] for b in page["blocks"]]
+    assert any("NeetCode roadmap" in line and "neetcode.io" in line for line in lines)
+    assert any("CS50" in line for line in lines)
+
+
+def test_the_resources_page_is_never_sent_to_the_model(client) -> None:
+    """"Obviously it is not to be tested on." A reading list is not material
+    to be examined on, and it must not cost anything either."""
+    page = client.get("/api/notes/scratch/resources").json()
+    client.put(f"/api/notes/{page['id']}/blocks", json={"blocks": [
+        {"id": None, "position": 0, "block_type": "bullet_list_item",
+         "text": "Read the KMP chapter at some point"},
+    ]})
+
+    assert client.get("/api/pipeline/pending").json()["unprocessed_blocks"] == 0
+
+    # …while a real note still counts.
+    tree = _tree(client)
+    note = client.post("/api/notes/ensure",
+                       json={"lesson_id": tree["lesson"]["id"]}).json()
+    _write(client, note["id"], ["Fixed-size chunking splits on a token budget"])
+    assert client.get("/api/pipeline/pending").json()["unprocessed_blocks"] == 1
+
+
+def test_the_resources_page_is_not_a_day_of_study(client) -> None:
+    """It should not light up the calendar either: saving a link is not the
+    same as having studied."""
+    import datetime as _dt
+
+    page = client.get("/api/notes/scratch/resources").json()
+    client.put(f"/api/notes/{page['id']}/blocks", json={"blocks": [
+        {"id": None, "position": 0, "block_type": "bullet_list_item",
+         "text": "https://neetcode.io/roadmap"},
+    ]})
+
+    month = _dt.date.today().strftime("%Y-%m")
+    assert client.get(f"/api/notes/calendar/{month}").json()["days"] == []
+
+
+def test_an_unknown_scratch_page_is_a_404(client) -> None:
+    assert client.get("/api/notes/scratch/banana").status_code == 404

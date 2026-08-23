@@ -25,7 +25,16 @@ FURNITURE = {"date_divider", "divider"}
 
 
 def on_a_live_page(session: Session, note: Note) -> bool:
-    """False when any level this note hangs from has been deleted."""
+    """False when a note is not somewhere the user studies.
+
+    That covers two cases: a note whose subject, topic, subtopic or lesson has
+    been deleted, and a scratch page — the Resources page is a place to keep
+    links, not material to be examined on, so it is never sent to the model
+    and never counted as a day's work.
+    """
+    if note.scratch_key is not None:
+        return False
+
     for row_id, model in ((note.lesson_id, Lesson),
                           (note.subtopic_id, Subtopic),
                           (note.topic_id, Topic),

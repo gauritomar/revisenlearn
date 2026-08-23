@@ -1,7 +1,13 @@
 """The resource flow in a real browser (spec §5.1).
 
 The API-level behaviour lives in `test_resources.py`; these tests hold the
-interaction itself — paste a link, get a resource, click it, write against it.
+interaction itself — open a resource, write against it, see it ranked on the
+dashboard.
+
+The paste-a-link dialog is gone with the resource library it fed: saving a
+link is writing it on the Resources page now. A URL in a *study* note is
+still detected into a Resource record (§4), which is what the split view and
+the dashboard's rankings read.
 """
 
 from __future__ import annotations
@@ -41,103 +47,6 @@ def _dashboard(page) -> None:
     wordmark."""
     page.get_by_test_id("header-home").click()
     page.get_by_test_id("dashboard").wait_for(state="visible")
-
-
-def _resources(page) -> None:
-    """Adding a resource lives in Resources, not on the Dashboard — the
-    Dashboard reports, it does not create."""
-    page.get_by_test_id("nav-resources").click()
-    page.get_by_test_id("resource-list").wait_for(state="visible")
-
-
-
-def test_add_a_resource_by_pasting_a_link(page, app) -> None:
-    """§5.1 — a single input, and Enter saves it."""
-    _resources(page)
-    page.get_by_test_id("add-resource").click()
-    page.get_by_test_id("resource-add").wait_for(state="visible")
-
-    page.get_by_test_id("resource-input").fill("https://example.com/rag-course")
-    page.get_by_test_id("resource-add-submit").click()
-
-    page.get_by_test_id("resource-add").wait_for(state="detached")
-
-    rows = app.query("SELECT title, url, resource_type, status FROM resources")
-    assert rows == [(
-        "https://example.com/rag-course",
-        "https://example.com/rag-course",
-        "article",
-        "inbox",
-    )]
-
-
-def test_add_a_resource_by_typing_a_title(page, app) -> None:
-    _resources(page)
-    page.get_by_test_id("add-resource").click()
-    page.get_by_test_id("resource-input").fill("Work through CLRS chapter 4")
-    page.get_by_test_id("resource-add-submit").click()
-    page.get_by_test_id("resource-add").wait_for(state="detached")
-
-    assert app.query("SELECT title, url FROM resources") == [
-        ("Work through CLRS chapter 4", None)
-    ]
-
-
-def test_enter_submits_the_quick_add(page, app) -> None:
-    """Five seconds means not reaching for the mouse."""
-    _resources(page)
-    page.get_by_test_id("add-resource").click()
-    page.get_by_test_id("resource-input").fill("Skim the FSRS paper")
-    page.keyboard.press("Enter")
-    page.get_by_test_id("resource-add").wait_for(state="detached")
-
-    assert app.query("SELECT count(*) FROM resources")[0][0] == 1
-
-
-def test_quick_add_placement_defaults_to_last_used(page, app) -> None:
-    """§5.1 — pickers default to the last-used values."""
-    branch = _branch(app.base_url)
-    page.reload(wait_until="networkidle")
-    _resources(page)
-
-    # First add: choose a placement explicitly.
-    page.get_by_test_id("add-resource").click()
-    page.get_by_test_id("resource-input").fill("First video")
-    page.get_by_test_id("resource-subject").select_option(str(branch["subject"]["id"]))
-    page.get_by_test_id("resource-topic").select_option(str(branch["topic"]["id"]))
-    page.get_by_test_id("resource-subtopic").select_option(str(branch["subtopic"]["id"]))
-    page.get_by_test_id("resource-add-submit").click()
-    page.get_by_test_id("resource-add").wait_for(state="detached")
-
-    # Second add: the pickers come back already filled in.
-    page.get_by_test_id("add-resource").click()
-    page.get_by_test_id("resource-add").wait_for(state="visible")
-    assert page.get_by_test_id("resource-subject").input_value() == str(branch["subject"]["id"])
-    assert page.get_by_test_id("resource-subtopic").input_value() == str(branch["subtopic"]["id"])
-
-    page.get_by_test_id("resource-input").fill("Second video")
-    page.get_by_test_id("resource-add-submit").click()
-    page.get_by_test_id("resource-add").wait_for(state="detached")
-
-    placements = app.query(
-        "SELECT title, subtopic_id FROM resources ORDER BY id"
-    )
-    assert placements == [
-        ("First video", branch["subtopic"]["id"]),
-        ("Second video", branch["subtopic"]["id"]),
-    ]
-
-
-def test_the_topic_picker_is_gated_on_the_subject(page, app) -> None:
-    _branch(app.base_url)
-    page.reload(wait_until="networkidle")
-    _resources(page)
-
-    page.get_by_test_id("add-resource").click()
-    page.get_by_test_id("resource-add").wait_for(state="visible")
-
-    assert page.get_by_test_id("resource-topic").is_disabled()
-    assert page.get_by_test_id("resource-subtopic").is_disabled()
 
 
 def test_clicking_a_resource_opens_the_split_view(page, app) -> None:

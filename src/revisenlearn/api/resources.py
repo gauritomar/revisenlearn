@@ -23,7 +23,6 @@ from ..models import (
     RESOURCE_STATUSES,
     RESOURCE_TYPES,
     Resource,
-    ResourceGroup,
     Setting,
     Subtopic,
     Tag,
@@ -31,8 +30,6 @@ from ..models import (
     Topic,
 )
 from .schemas import (
-    ResourceGroupIn,
-    ResourceGroupOut,
     TagIn,
     TagOut,
     ResourceCreate,
@@ -209,8 +206,6 @@ def list_resources(
     status: str | None = Query(default=None),
     subject_id: int | None = Query(default=None),
     topic_id: int | None = Query(default=None),
-    group_id: int | None = Query(default=None),
-    ungrouped: bool = Query(default=False),
     tag: str | None = Query(default=None),
     session: Session = Depends(get_session),
 ) -> list[ResourceOut]:
@@ -221,10 +216,6 @@ def list_resources(
         stmt = stmt.where(Resource.subject_id == subject_id)
     if topic_id is not None:
         stmt = stmt.where(Resource.topic_id == topic_id)
-    if group_id is not None:
-        stmt = stmt.where(Resource.group_id == group_id)
-    elif ungrouped:
-        stmt = stmt.where(Resource.group_id.is_(None))
     if tag:
         # Tags cut across headings, which is the point of having both.
         tagged = {
@@ -306,7 +297,6 @@ def create_resource(payload: ResourceCreate,
         priority=payload.priority,
         progress_pct=payload.progress_pct,
         progress_note=payload.progress_note,
-        group_id=payload.group_id,
         **placement,
     )
     _resolve_ancestry(session, resource)
@@ -510,84 +500,6 @@ def detect_resources_in_note(session: Session, note_id: int) -> list[int]:
 # shape. Tags are what it is about — many per resource, and shared across
 # headings, so "interview" can cut across everything.
 # --------------------------------------------------------------------------
-
-@router.get("/resource-groups", response_model=list[ResourceGroupOut])
-def list_groups(session: Session = Depends(get_session)) -> list[ResourceGroupOut]:
-    groups = session.exec(
-        select(ResourceGroup)
-        .where(ResourceGroup.deleted_at.is_(None))
-        .order_by(ResourceGroup.position, ResourceGroup.id)
-    ).all()
-
-    counts: dict[int, int] = {}
-    for resource in session.exec(
-        select(Resource).where(Resource.deleted_at.is_(None),
-                               Resource.group_id.is_not(None))
-    ).all():
-        counts[resource.group_id] = counts.get(resource.group_id, 0) + 1
-
-    return [
-        ResourceGroupOut(id=g.id, name=g.name, colour=g.colour,
-                         position=g.position,
-                         resource_count=counts.get(g.id, 0))
-        for g in groups
-    ]
-
-
-@router.post("/resource-groups", response_model=ResourceGroupOut, status_code=201)
-def create_group(payload: ResourceGroupIn,
-                 session: Session = Depends(get_session)) -> ResourceGroupOut:
-    last = session.exec(
-        select(ResourceGroup).where(ResourceGroup.deleted_at.is_(None))
-        .order_by(ResourceGroup.position.desc())
-    ).first()
-    group = ResourceGroup(
-        name=payload.name.strip(),
-        colour=payload.colour,
-        position=(payload.position if payload.position is not None
-                  else ((last.position + 1) if last else 0)),
-    )
-    session.add(group)
-    session.flush()
-    return ResourceGroupOut(id=group.id, name=group.name, colour=group.colour,
-                            position=group.position, resource_count=0)
-
-
-@router.patch("/resource-groups/{group_id}", response_model=ResourceGroupOut)
-def rename_group(group_id: int, payload: ResourceGroupIn,
-                 session: Session = Depends(get_session)) -> ResourceGroupOut:
-    group = session.get(ResourceGroup, group_id)
-    if group is None or group.deleted_at is not None:
-        raise HTTPException(404, "Group not found")
-    group.name = payload.name.strip()
-    if payload.colour is not None:
-        group.colour = payload.colour
-    if payload.position is not None:
-        group.position = payload.position
-    session.add(group)
-    session.flush()
-    return ResourceGroupOut(id=group.id, name=group.name, colour=group.colour,
-                            position=group.position, resource_count=0)
-
-
-@router.delete("/resource-groups/{group_id}", status_code=204)
-def delete_group(group_id: int, session: Session = Depends(get_session)) -> None:
-    """The heading goes; the resources under it do not.
-
-    Deleting a shelf is not deleting the books on it — they fall back to
-    ungrouped, where they can be filed again.
-    """
-    group = session.get(ResourceGroup, group_id)
-    if group is None or group.deleted_at is not None:
-        raise HTTPException(404, "Group not found")
-    group.deleted_at = _now()
-    session.add(group)
-    for resource in session.exec(
-        select(Resource).where(Resource.group_id == group_id)
-    ).all():
-        resource.group_id = None
-        session.add(resource)
-
 
 @router.get("/tags", response_model=list[TagOut])
 def list_tags(session: Session = Depends(get_session)) -> list[TagOut]:
