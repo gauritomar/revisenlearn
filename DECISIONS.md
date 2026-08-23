@@ -856,7 +856,61 @@ retrying could plausibly work.
 
 ---
 
-## 13. What is not built
+## 13. The library, the revision loop, and questions worth answering
+
+### Headings and tags are different things
+
+A resource has one heading and many tags. That asymmetry is the point: a
+heading is *where a thing is filed*, so the library has a shape you can scan,
+and tags are *what it is about*, so "interview" can cut across every shelf.
+Making both many-to-many would have produced a pile with labels on it.
+Deleting a heading does not delete what was on it — a shelf is not its books.
+
+### The calendar needed the other half of the sentence
+
+FSRS already knew *when* each concept comes back. What the app could not say
+was *what* — "seven reviews due" is a number, not a plan. `concept_sources`
+knows which note block a concept came from, so it knows which day that block
+was written; joining the two turns the number into "the three things you wrote
+on Tuesday". That is the form the user asked for — "revise what you studied
+1/3/10 days ago" — and it is the form a person can act on, because they
+remember Tuesday.
+
+Overdue work is counted on today rather than on the day it slipped. A calendar
+of red missed days is a guilt machine, and §9.6 is explicit that the count is
+information, never a debt.
+
+### Grouping is what makes a graph readable
+
+Concepts are compound children of their topic, which is a child of their
+subject. This is not decoration: a force layout over a hundred loose nodes is
+a hairball whatever you colour it. The structure already exists in the notes,
+so the graph shows it. Subject and topic boxes are not selectable — a backdrop
+that can be clicked would be mistaken for a concept.
+
+### Questions are asked by an interviewer, not a quizmaster
+
+`mcq_generation_v2` (a new version — §11 forbids editing a prompt in place)
+names the kinds of question a set must spread across: correctness, boundary,
+complexity, choice of approach, failure mode, trace, consequence — with a cap
+of three of any one, so ten questions cannot collapse into ten definitions.
+Distractors must each encode one nameable mistake rather than being merely
+wrong, and the options must be mutually exclusive.
+
+The larger change is what the model is given. It used to see a concept name
+and a one-line definition, which can only produce questions about definitions.
+It now sees the learner's own note text and the subject. A live generation
+against real notes produced a failure-mode question ("if you always added,
+what would 'IV' give?"), the last-character boundary, and "why must you
+compare to the next character" — questions v1 did not reliably reach.
+
+**The golden set (§11.5) is still not written**, so this change was judged by
+reading real output rather than by a regression set. That remains the most
+important outstanding item in this repo.
+
+---
+
+## 14. What is not built
 
 Honest list, so nothing here is a surprise.
 

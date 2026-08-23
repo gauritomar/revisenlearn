@@ -13,6 +13,7 @@ import pytest
 from sqlmodel import select
 
 from revisenlearn.llm import set_provider
+from revisenlearn.pipeline.mcqs import MCQ_PROMPT_VERSION
 from revisenlearn.llm.mock import MockProvider
 from revisenlearn.models import (
     Concept,
@@ -401,7 +402,7 @@ def test_every_call_is_logged_with_version_model_and_tokens(session) -> None:
         assert mcq_runs
         for run in mcq_runs:
             assert run.model == "gemini-3.5-flash-lite"
-            assert run.prompt_version == "mcq_generation_v1"
+            assert run.prompt_version == MCQ_PROMPT_VERSION
             assert run.concept_id is not None
 
 

@@ -954,6 +954,7 @@ export function Todos() {
                 type="checkbox"
                 checked={entry.done}
                 onChange={() => toggle.mutate(entry)}
+                data-testid={`done-${entry.kind}-${entry.id}`}
                 aria-label={entry.title}
                 className={`size-3.5 shrink-0 ${entry.done ? 'accent-emerald-600' : 'accent-amber-500'}`}
               />

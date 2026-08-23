@@ -14,6 +14,7 @@ import pytest
 from sqlmodel import select
 
 from revisenlearn import practice
+from revisenlearn.pipeline.mcqs import MCQ_PROMPT_VERSION
 from revisenlearn.llm import set_provider
 from revisenlearn.llm.mock import MockProvider
 from revisenlearn.models import (
@@ -169,7 +170,7 @@ def test_ten_mcqs_are_generated_per_concept(session) -> None:
         assert len(options) == 4
         assert mcq.correct_option_id in {o["id"] for o in options}
         assert mcq.explanation
-        assert mcq.prompt_version == "mcq_generation_v1"
+        assert mcq.prompt_version == MCQ_PROMPT_VERSION
         assert mcq.status == "active"
 
 
@@ -189,7 +190,7 @@ def test_generation_is_logged_against_the_concept(session) -> None:
     assert run.task == "mcq_generation"
     assert run.concept_id == concept.id
     assert run.model == "gemini-3.5-flash-lite"
-    assert run.prompt_version == "mcq_generation_v1"
+    assert run.prompt_version == MCQ_PROMPT_VERSION
     assert run.estimated_cost_usd is not None
 
 
@@ -611,3 +612,43 @@ def test_a_fifty_question_session_runs_end_to_end(session) -> None:
     assert result["completed_count"] == 50
     assert result["correct_count"] == 25
     assert result["finished"] is True
+
+
+def test_generation_is_grounded_in_the_learners_own_notes(session, mock_llm) -> None:
+    """mcq_generation v2 — "a question generated from a definition is a
+    question about a definition". The request carries the note text the
+    concept came from, and the subject it sits under."""
+    from revisenlearn.models import ConceptSource, Note, NoteBlock, Subject
+    from revisenlearn.pipeline import mcqs
+
+    subject = Subject(name="DSA")
+    session.add(subject)
+    session.flush()
+
+    note = Note(title="Strings", study_date=dt.date.today(), subject_id=subject.id)
+    session.add(note)
+    session.flush()
+    block = NoteBlock(
+        note_id=note.id, position=0, block_type="bullet_list_item",
+        text="Compare the current character with the next to decide add or subtract.",
+        content_hash="h1",
+    )
+    session.add(block)
+    session.flush()
+
+    concept = Concept(canonical_name="Roman numerals",
+                      normalised_name="roman numerals",
+                      definition="Subtract when a smaller value precedes a larger one.",
+                      subject_id=subject.id)
+    session.add(concept)
+    session.flush()
+    session.add(ConceptSource(concept_id=concept.id, note_block_id=block.id,
+                              note_id=note.id))
+    session.flush()
+
+    mcqs.generate_for_concept(session, concept)
+
+    sent = mock_llm.calls[-1]["input"]
+    assert "SUBJECT: DSA" in sent
+    assert "NOTES:" in sent
+    assert "Compare the current character with the next" in sent

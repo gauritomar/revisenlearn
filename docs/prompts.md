@@ -75,6 +75,35 @@ records `request_mode='standard'`, so the recorded cost is truthful rather
 than claiming a discount that was not taken. Real batch submission is
 outstanding — see DECISIONS.md §8.
 
+### mcq_generation v2 — 2026-08-23
+Model:     gemini-3.5-flash-lite   Thinking: low
+Mode:      standard                Cached:   not yet
+Changed:   Written as an interviewer rather than a quizmaster. A *new
+           version*, not an edit to v1, per §11: never edit a prompt in
+           place.
+           - A named spread of question kinds — correctness, boundary,
+             complexity, choice of approach, failure mode, trace,
+             consequence — with a cap of three of any one, so a set cannot
+             collapse into ten definition questions.
+           - "Every stem must be answerable by thinking, not by remembering
+             a phrase. If a question can be answered by matching wording to
+             the notes, rewrite it."
+           - Distractors must each encode one *nameable* mistake — an
+             off-by-one, a reversed comparison, a rule applied outside its
+             precondition — and the options must be mutually exclusive.
+           - The request now carries the learner's own note text and the
+             subject, not just the concept name and a one-line definition. A
+             question generated from a definition is a question about a
+             definition.
+Because:   "Fix the question generator a little bit to be more algorithmically
+           sound like ask me interview style questions."
+Golden set: not yet run — §11.5's fixtures are still not written, so this
+           change is checked by reading real output, not by a regression set.
+           One live generation against real notes produced a failure-mode
+           question ("if you always added, what would 'IV' give?"), the
+           last-character boundary, and "why must you compare to the next
+           character" — the kinds v1 did not reliably reach.
+
 ### question_generation v1 — 2026-08-22
 Model:     gemini-3.7-flash        Thinking: low
 Mode:      standard                Cached:   no

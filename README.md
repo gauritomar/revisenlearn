@@ -166,6 +166,15 @@ with a rating derived in Python rather than by the model. Five is the default
 session and a session of one still counts. Both override buttons are always
 there for when the grader is being stupid.
 
+**Resources** is a library: file links under headings you name, tag them
+across those headings, and filter by tag. **Todos** is yours alone — select
+all, tick off in bulk, delete what has gone stale.
+
+The **Dashboard** opens with the calendar, and under it *Revise today*: what
+is due, grouped by the day you wrote it ("studied 3 days ago"), with that
+material's questions one click away and your score on them beside it. FSRS
+picks the intervals; the app just says which day's work has come back.
+
 **Roadmap** tracks what you have worked through — lessons and their items, with
 percentage bars. Deliberately a different visual language from mastery: a full
 bar there means you ticked every box, not that you know it. **Todos** is the

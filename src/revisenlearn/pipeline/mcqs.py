@@ -26,7 +26,7 @@ from ..prompts import load_prompt
 
 log = logging.getLogger(__name__)
 
-MCQ_PROMPT_VERSION = "mcq_generation_v1"
+MCQ_PROMPT_VERSION = "mcq_generation_v2"
 
 #: Spec §9.1
 QUESTIONS_PER_CONCEPT = 10
@@ -127,13 +127,49 @@ def concepts_needing_mcqs(session: Session, concept_ids: set[int]) -> list[int]:
 # Generation
 # --------------------------------------------------------------------------
 
-def _render_request(concept: Concept, avoid: list[str]) -> str:
+def source_notes(session: Session, concept_id: int, limit: int = 8) -> list[str]:
+    """The learner's own writing behind this concept.
+
+    A question generated from a one-line definition is a question about a
+    definition. The notes are what they actually studied — their examples,
+    their vocabulary, their level — so the questions are grounded in that
+    rather than in whatever the model associates with the term.
+    """
+    from ..models import ConceptSource, NoteBlock
+
+    sources = session.exec(
+        select(ConceptSource).where(ConceptSource.concept_id == concept_id,
+                                    ConceptSource.invalidated_at.is_(None))
+    ).all()
+    if not sources:
+        return []
+    blocks = session.exec(
+        select(NoteBlock).where(NoteBlock.id.in_({s.note_block_id for s in sources}),
+                                NoteBlock.deleted_at.is_(None))
+        .order_by(NoteBlock.note_id, NoteBlock.position)
+    ).all()
+    out = []
+    for block in blocks[:limit]:
+        text = (block.text or "").strip()
+        if text:
+            out.append(text[:600])
+    return out
+
+
+def _render_request(concept: Concept, avoid: list[str],
+                    notes: list[str] | None = None,
+                    subject: str | None = None) -> str:
     lines = [
         f"CONCEPT: {concept.canonical_name}",
         f"DEFINITION: {concept.definition or ''}",
         f"DIFFICULTY: {concept.difficulty or 3}",
         f"COUNT: {QUESTIONS_PER_CONCEPT}",
     ]
+    if subject:
+        lines.insert(1, f"SUBJECT: {subject}")
+    if notes:
+        lines.append("NOTES:")
+        lines.extend(f"- {line}" for line in notes)
     if avoid:
         lines.append("AVOID_STEMS:")
         lines.extend(f"- {stem}" for stem in avoid[:40])
@@ -147,11 +183,19 @@ def generate_for_concept(session: Session, concept: Concept,
     cfg = task_config("mcq_generation")
     system = load_prompt(MCQ_PROMPT_VERSION)
     avoid = retired_stems(session, concept.id)
+    notes = source_notes(session, concept.id)
+
+    subject_name = None
+    if concept.subject_id is not None:
+        from ..models import Subject
+
+        subject = session.get(Subject, concept.subject_id)
+        subject_name = subject.name if subject else None
 
     try:
         result = provider.generate_structured(
             system_instruction=system,
-            user_input=_render_request(concept, avoid),
+            user_input=_render_request(concept, avoid, notes, subject_name),
             model=cfg["model"],
             schema=MCQBatch,
             thinking_level=cfg.get("thinking_level"),

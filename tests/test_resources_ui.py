@@ -303,6 +303,12 @@ def test_dashboard_shows_study_next_and_continue_learning(page, app) -> None:
     page.reload(wait_until="networkidle")
     _dashboard(page)
 
+    # The section renders its empty state first; wait for the fetch.
+    page.wait_for_function(
+        "() => document.querySelector('[data-testid=dash-continue-learning]')"
+        "?.innerText.includes('Half watched')",
+        timeout=10_000,
+    )
     continuing = page.get_by_test_id("dash-continue-learning")
     continuing.wait_for(state="visible")
     assert "Half watched" in continuing.inner_text()

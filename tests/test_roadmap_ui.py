@@ -330,7 +330,8 @@ def test_hide_completed_is_on_by_default_and_toggles(page_roadmap,
     page.wait_for_timeout(400)
 
     todo_id = roadmap_app.query("SELECT id FROM todos")[0][0]
-    page.get_by_test_id(f"entry-todo-{todo_id}").locator("input").click()
+    # Two checkboxes per row now: one selects, one completes.
+    page.get_by_test_id(f"done-todo-{todo_id}").click()
     page.wait_for_timeout(700)
 
     # Hidden while the toggle is on.
