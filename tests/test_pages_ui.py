@@ -318,3 +318,135 @@ def test_the_roadmap_survives_a_narrow_window(page, app) -> None:
 
     assert page.get_by_test_id("nav-roadmap").is_visible()
     assert page.get_by_test_id("header-home").is_visible()
+
+
+def test_todos_can_be_deleted_and_bulk_managed(page, app) -> None:
+    """"On the todos page I should be able to delete todos as well. and also
+    have a select all.\""""
+    with httpx.Client(base_url=app.base_url, timeout=30) as c:
+        for title in ("Redo resume", "Book flights", "Read the paper"):
+            c.post("/api/todos", json={"title": title})
+
+    page.reload(wait_until="networkidle")
+    page.get_by_test_id("nav-todos").click()
+    page.get_by_test_id("todo-entries").wait_for(state="visible")
+    ids = [r[0] for r in app.query("SELECT id FROM todos ORDER BY id")]
+
+    # The per-row delete is visible without hunting for it.
+    trash = page.get_by_test_id(f"todo-delete-{ids[0]}")
+    assert trash.evaluate("el => getComputedStyle(el).opacity") == "1"
+    trash.click()
+    page.get_by_test_id(f"todo-delete-confirm-{ids[0]}").click()
+    page.wait_for_function(
+        f"() => !document.querySelector('[data-testid=\"entry-todo-{ids[0]}\"]')",
+        timeout=10_000,
+    )
+
+    # Select all, then finish the rest in one go.
+    page.get_by_test_id("todo-select-all").check()
+    page.get_by_test_id("todo-selection").wait_for(state="visible")
+    page.get_by_test_id("todo-bulk-done").click()
+
+    # Done todos drop off the board, which hides completed by default.
+    page.wait_for_function(
+        "() => document.querySelectorAll('[data-testid^=\"entry-todo-\"]').length === 0",
+        timeout=10_000,
+    )
+    assert app.query(
+        "SELECT count(*) FROM todos WHERE done = 1 AND deleted_at IS NULL"
+    )[0][0] == 2
+
+
+def test_selected_todos_can_be_deleted_together(page, app) -> None:
+    with httpx.Client(base_url=app.base_url, timeout=30) as c:
+        for title in ("One", "Two"):
+            c.post("/api/todos", json={"title": title})
+
+    page.reload(wait_until="networkidle")
+    page.get_by_test_id("nav-todos").click()
+    page.get_by_test_id("todo-entries").wait_for(state="visible")
+
+    page.get_by_test_id("todo-select-all").check()
+    page.get_by_test_id("todo-bulk-delete").click()
+
+    page.wait_for_function(
+        "() => document.querySelectorAll('[data-testid^=\"entry-todo-\"]').length === 0",
+        timeout=10_000,
+    )
+    assert app.query(
+        "SELECT count(*) FROM todos WHERE deleted_at IS NOT NULL"
+    )[0][0] == 2
+
+
+def test_resources_group_under_headings_and_carry_tags(page, app) -> None:
+    """"Add some type to resources like tags and be able to group resources
+    under different headings and within each it should be able to have certain
+    tags.\""""
+    with httpx.Client(base_url=app.base_url, timeout=30) as c:
+        c.post("/api/resources", json={"title": "NeetCode roadmap",
+                                       "url": "https://neetcode.io/roadmap"})
+        c.post("/api/resources", json={"title": "CS50"})
+
+    page.reload(wait_until="networkidle")
+    page.get_by_test_id("nav-resources").click()
+    page.get_by_test_id("resource-list").wait_for(state="visible")
+
+    # Everything starts unfiled, which is an honest shelf of its own.
+    page.get_by_test_id("shelf-ungrouped").wait_for(state="visible")
+
+    page.get_by_test_id("add-group").click()
+    page.get_by_test_id("new-group-name").fill("Interview prep")
+    page.keyboard.press("Enter")
+    page.wait_for_function(
+        "() => document.body.innerText.includes('INTERVIEW PREP')"
+        " || document.body.innerText.includes('Interview prep')",
+        timeout=10_000,
+    )
+    group_id = app.query("SELECT id FROM resource_groups")[0][0]
+
+    # File one under it.
+    resource_id = app.query("SELECT id FROM resources ORDER BY id")[0][0]
+    page.get_by_test_id(f"file-{resource_id}").select_option(str(group_id))
+    page.wait_for_function(
+        f"() => !!document.querySelector('[data-testid=\"shelf-{group_id}\"] "
+        f"[data-testid=\"resource-{resource_id}\"]')",
+        timeout=10_000,
+    )
+    assert app.query("SELECT group_id FROM resources WHERE id = ?",
+                     (resource_id,))[0][0] == group_id
+
+    # Tag it, and filter the whole library by that tag.
+    page.get_by_test_id(f"add-tag-{resource_id}").click()
+    page.get_by_test_id(f"tag-input-{resource_id}").fill("dsa")
+    page.keyboard.press("Enter")
+    page.get_by_test_id(f"resource-{resource_id}-tag-dsa").wait_for(state="visible",
+                                                                    timeout=10_000)
+
+    page.get_by_test_id("tag-filter-dsa").click()
+    page.wait_for_function(
+        "() => document.querySelectorAll('[data-testid^=\"resource-\"][data-testid$=\"\"]')"
+        ".length >= 0",
+        timeout=5_000,
+    )
+    page.wait_for_timeout(600)
+    titles = page.get_by_test_id("resource-list").inner_text()
+    assert "NeetCode" in titles and "CS50" not in titles
+
+
+def test_deleting_a_heading_keeps_the_resources(page, app) -> None:
+    """Deleting a shelf is not deleting the books on it."""
+    with httpx.Client(base_url=app.base_url, timeout=30) as c:
+        group = c.post("/api/resource-groups", json={"name": "Courses"}).json()
+        c.post("/api/resources", json={"title": "CS50", "group_id": group["id"]})
+
+    page.reload(wait_until="networkidle")
+    page.get_by_test_id("nav-resources").click()
+    page.get_by_test_id(f"shelf-{group['id']}").wait_for(state="visible")
+
+    page.get_by_test_id(f"delete-group-{group['id']}").click()
+    page.wait_for_function(
+        f"() => !document.querySelector('[data-testid=\"shelf-{group['id']}\"]')",
+        timeout=10_000,
+    )
+    assert app.query("SELECT count(*) FROM resources WHERE deleted_at IS NULL")[0][0] == 1
+    assert app.query("SELECT group_id FROM resources")[0][0] is None

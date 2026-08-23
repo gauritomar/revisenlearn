@@ -138,6 +138,16 @@ export type Note = {
 
 export type ResourceStatus = 'inbox' | 'next' | 'in_progress' | 'completed' | 'archived'
 
+export type Tag = { id: number; name: string; colour: string | null }
+
+export type ResourceGroup = {
+  id: number
+  name: string
+  colour: string | null
+  position: number
+  resource_count: number
+}
+
 export type Resource = {
   id: number
   title: string
@@ -151,6 +161,9 @@ export type Resource = {
   subtopic_id: number | null
   progress_pct: number
   progress_note: string | null
+  /** The heading it is filed under, and what it is about. */
+  group_id: number | null
+  tags: Tag[]
   created_at: string
   last_opened_at: string | null
   completed_at: string | null
@@ -622,7 +635,29 @@ export const api = {
   }>) =>
     request<Note>(`/api/notes/${id}/blocks`, { method: 'PUT', body: JSON.stringify({ blocks }) }),
 
-  resources: (params: Record<string, string | number> = {}) => {
+  resourceGroups: () => request<ResourceGroup[]>('/api/resource-groups'),
+  createResourceGroup: (name: string) =>
+    request<ResourceGroup>('/api/resource-groups', {
+      method: 'POST', body: JSON.stringify({ name }),
+    }),
+  renameResourceGroup: (id: number, name: string) =>
+    request<ResourceGroup>(`/api/resource-groups/${id}`, {
+      method: 'PATCH', body: JSON.stringify({ name }),
+    }),
+  deleteResourceGroup: (id: number) =>
+    request<void>(`/api/resource-groups/${id}`, { method: 'DELETE' }),
+
+  tags: () => request<Tag[]>('/api/tags'),
+  tagResource: (resourceId: number, name: string) =>
+    request<Resource>(`/api/resources/${resourceId}/tags`, {
+      method: 'POST', body: JSON.stringify({ name }),
+    }),
+  untagResource: (resourceId: number, tagId: number) =>
+    request<Resource>(`/api/resources/${resourceId}/tags/${tagId}`, {
+      method: 'DELETE',
+    }),
+
+  resources: (params: Record<string, string | number | boolean> = {}) => {
     const qs = new URLSearchParams(
       Object.entries(params).map(([k, v]) => [k, String(v)]),
     ).toString()

@@ -689,12 +689,20 @@ function LessonRow({ lesson, index, topicId, subtopicId }: {
 
 // --------------------------------------------------------------------------
 
+/** One row's identity on the board: kind and id together, because a lesson
+ *  and a todo can share an id. */
+const keyOf = (entry: { kind: string; id: number }) => `${entry.kind}-${entry.id}`
+
 /** Todos (addendum §6) — "a flat, filterable, cross-cutting list combining
  *  standalone Todos and any open Lesson/Item across every subject. This is the
  *  view with the hide-completed toggle, default on." */
 export function Todos() {
   const qc = useQueryClient()
+  const refresh = useRefreshEverything()
   const [hideCompleted, setHideCompleted] = useState(true)
+  /** Selection, keyed "kind-id". A todos list is something you manage in
+   *  bulk — tick off five things at once, clear out a stale week. */
+  const [selected, setSelected] = useState<Set<string>>(new Set())
   const [subjectId, setSubjectId] = useState<number | ''>('')
   const [dueOnly, setDueOnly] = useState(false)
   const [title, setTitle] = useState('')
@@ -726,6 +734,36 @@ export function Todos() {
       setDue('')
       await qc.invalidateQueries({ queryKey: ['todo-board'] })
     },
+  })
+
+  const entries = data?.entries ?? []
+  const allSelected = entries.length > 0 && entries.every((e) => selected.has(keyOf(e)))
+  const someSelected = selected.size > 0
+  const selectedTodoIds = entries
+    .filter((e) => e.kind === 'todo' && selected.has(keyOf(e)))
+    .map((e) => e.id)
+
+  /** Bulk toggles run one after another rather than all at once: SQLite has a
+   *  single writer, and a dozen parallel writes would just queue behind each
+   *  other with less to show for it. */
+  const bulkDone = useMutation({
+    mutationFn: async (done: boolean) => {
+      for (const entry of entries) {
+        if (!selected.has(keyOf(entry)) || entry.done === done) continue
+        if (entry.kind === 'todo') await api.updateTodo(entry.id, { done })
+        else if (entry.kind === 'lesson') {
+          await api.updateLesson(entry.id, { status: done ? 'done' : 'not_started' })
+        } else await api.toggleChecklistItem(entry.id, done)
+      }
+    },
+    onSuccess: async () => { setSelected(new Set()); await refresh() },
+  })
+
+  const bulkDelete = useMutation({
+    mutationFn: async () => {
+      for (const id of selectedTodoIds) await api.deleteTodo(id)
+    },
+    onSuccess: async () => { setSelected(new Set()); await refresh() },
   })
 
   const toggle = useMutation({
@@ -822,7 +860,68 @@ export function Todos() {
           Nothing open.
         </p>
       ) : (
-        <ul className="mt-4 space-y-1" data-testid="todo-entries">
+        <>
+        <div className="mt-4 flex flex-wrap items-center gap-2 border-b border-line-soft pb-2">
+          <label className="flex items-center gap-1.5 text-[0.75rem] text-muted">
+            <input
+              type="checkbox"
+              data-testid="todo-select-all"
+              checked={allSelected}
+              ref={(el) => { if (el) el.indeterminate = someSelected && !allSelected }}
+              onChange={(e) => {
+                setSelected(e.target.checked
+                  ? new Set((data?.entries ?? []).map(keyOf))
+                  : new Set())
+              }}
+              className="size-3.5 accent-[var(--color-accent)]"
+            />
+            Select all
+          </label>
+
+          {selected.size > 0 && (
+            <span data-testid="todo-selection" className="flex flex-wrap items-center gap-2 text-[0.75rem]">
+              <span className="text-muted">{selected.size} selected</span>
+              <button
+                type="button"
+                onClick={() => bulkDone.mutate(true)}
+                data-testid="todo-bulk-done"
+                className="rounded border border-emerald-600 px-2 py-0.5 text-emerald-700 transition hover:bg-emerald-50"
+              >
+                Mark done
+              </button>
+              <button
+                type="button"
+                onClick={() => bulkDone.mutate(false)}
+                data-testid="todo-bulk-open"
+                className="rounded border border-amber-500 px-2 py-0.5 text-amber-700 transition hover:bg-amber-50"
+              >
+                Mark open
+              </button>
+              {/* Only standalone todos can be deleted from here: a lesson or a
+                  checklist item shown on this board lives somewhere else, and
+                  removing it from a view of it is the wrong place to do it. */}
+              {selectedTodoIds.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => bulkDelete.mutate()}
+                  data-testid="todo-bulk-delete"
+                  className="rounded border border-stale px-2 py-0.5 text-stale transition hover:bg-stale-wash"
+                >
+                  Delete {selectedTodoIds.length} todo{selectedTodoIds.length === 1 ? '' : 's'}
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => setSelected(new Set())}
+                className="px-1 text-muted transition hover:text-ink"
+              >
+                Clear
+              </button>
+            </span>
+          )}
+        </div>
+
+        <ul className="mt-2 space-y-1" data-testid="todo-entries">
           {data!.entries.map((entry) => (
             <li
               key={`${entry.kind}-${entry.id}`}
@@ -836,6 +935,21 @@ export function Todos() {
                 entry.done ? 'bg-emerald-50/70' : 'bg-amber-50/60',
               ].join(' ')}
             >
+              <input
+                type="checkbox"
+                checked={selected.has(keyOf(entry))}
+                onChange={(e) => {
+                  setSelected((current) => {
+                    const next = new Set(current)
+                    if (e.target.checked) next.add(keyOf(entry))
+                    else next.delete(keyOf(entry))
+                    return next
+                  })
+                }}
+                data-testid={`select-${entry.kind}-${entry.id}`}
+                aria-label={`Select ${entry.title}`}
+                className="size-3.5 shrink-0 accent-[var(--color-accent)]"
+              />
               <input
                 type="checkbox"
                 checked={entry.done}
@@ -869,6 +983,7 @@ export function Todos() {
             </li>
           ))}
         </ul>
+        </>
       )}
     </div>
   )
@@ -916,7 +1031,9 @@ function DeleteTodo({ id, title }: { id: number; title: string }) {
       data-testid={`todo-delete-${id}`}
       aria-label={`Delete ${title}`}
       title={`Delete ${title}`}
-      className="grid size-5 shrink-0 place-items-center rounded text-faint opacity-0 transition hover:bg-sunken hover:text-stale focus-visible:opacity-100 group-hover:opacity-100"
+      // Always visible here, unlike the Roadmap's: this is a list you come to
+      // in order to prune, not one you pass through on the way somewhere.
+      className="grid size-5 shrink-0 place-items-center rounded text-faint transition hover:bg-sunken hover:text-stale"
     >
       <svg width="11" height="11" viewBox="0 0 12 12" fill="none" aria-hidden="true">
         <path d="M2.5 3.5h7M5 3V2h2v1M4 3.5l.4 6h3.2l.4-6"

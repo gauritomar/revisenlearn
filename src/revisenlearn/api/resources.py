@@ -19,8 +19,22 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlmodel import Session, select
 
 from ..db import get_session
-from ..models import RESOURCE_STATUSES, RESOURCE_TYPES, Resource, Setting, Subtopic, Topic
+from ..models import (
+    RESOURCE_STATUSES,
+    RESOURCE_TYPES,
+    Resource,
+    ResourceGroup,
+    Setting,
+    Subtopic,
+    Tag,
+    Tagging,
+    Topic,
+)
 from .schemas import (
+    ResourceGroupIn,
+    ResourceGroupOut,
+    TagIn,
+    TagOut,
     ResourceCreate,
     ResourceOut,
     ResourceUpdate,
@@ -48,8 +62,23 @@ def _now() -> datetime:
     return datetime.now(timezone.utc)
 
 
-def _out(resource: Resource) -> ResourceOut:
-    return ResourceOut.model_validate(resource, from_attributes=True)
+def _tags_for(session: Session, resource_id: int) -> list[dict]:
+    """The tags on one resource, through the polymorphic join table."""
+    rows = session.exec(
+        select(Tag)
+        .join(Tagging, Tagging.tag_id == Tag.id)
+        .where(Tagging.target_type == "resource",
+               Tagging.target_id == resource_id)
+        .order_by(Tag.name)
+    ).all()
+    return [{"id": t.id, "name": t.name, "colour": t.colour} for t in rows]
+
+
+def _out(resource: Resource, session: Session | None = None) -> ResourceOut:
+    data = ResourceOut.model_validate(resource, from_attributes=True)
+    if session is not None:
+        data.tags = _tags_for(session, resource.id)
+    return data
 
 
 # --------------------------------------------------------------------------
@@ -180,6 +209,9 @@ def list_resources(
     status: str | None = Query(default=None),
     subject_id: int | None = Query(default=None),
     topic_id: int | None = Query(default=None),
+    group_id: int | None = Query(default=None),
+    ungrouped: bool = Query(default=False),
+    tag: str | None = Query(default=None),
     session: Session = Depends(get_session),
 ) -> list[ResourceOut]:
     stmt = select(Resource).where(Resource.deleted_at.is_(None))
@@ -189,10 +221,26 @@ def list_resources(
         stmt = stmt.where(Resource.subject_id == subject_id)
     if topic_id is not None:
         stmt = stmt.where(Resource.topic_id == topic_id)
+    if group_id is not None:
+        stmt = stmt.where(Resource.group_id == group_id)
+    elif ungrouped:
+        stmt = stmt.where(Resource.group_id.is_(None))
+    if tag:
+        # Tags cut across headings, which is the point of having both.
+        tagged = {
+            row.target_id
+            for row in session.exec(
+                select(Tagging)
+                .join(Tag, Tag.id == Tagging.tag_id)
+                .where(Tagging.target_type == "resource",
+                       Tag.name == tag)
+            ).all()
+        }
+        stmt = stmt.where(Resource.id.in_(tagged or {-1}))
     rows = session.exec(
         stmt.order_by(Resource.priority.desc(), Resource.created_at.desc())
     ).all()
-    return [_out(r) for r in rows]
+    return [_out(r, session) for r in rows]
 
 
 @router.get("/resources/study-next", response_model=list[ResourceOut])
@@ -222,7 +270,7 @@ def study_next(
             r.last_opened_at or r.created_at,
         )
     )
-    return [_out(r) for r in rows[:limit]]
+    return [_out(r, session) for r in rows[:limit]]
 
 
 @router.post("/resources", response_model=ResourceOut, status_code=201)
@@ -258,13 +306,14 @@ def create_resource(payload: ResourceCreate,
         priority=payload.priority,
         progress_pct=payload.progress_pct,
         progress_note=payload.progress_note,
+        group_id=payload.group_id,
         **placement,
     )
     _resolve_ancestry(session, resource)
     session.add(resource)
     session.flush()
     _write_last_used(session, resource)
-    return _out(resource)
+    return _out(resource, session)
 
 
 def _get_resource(session: Session, resource_id: int) -> Resource:
@@ -277,7 +326,7 @@ def _get_resource(session: Session, resource_id: int) -> Resource:
 @router.get("/resources/{resource_id}", response_model=ResourceOut)
 def get_resource(resource_id: int,
                  session: Session = Depends(get_session)) -> ResourceOut:
-    return _out(_get_resource(session, resource_id))
+    return _out(_get_resource(session, resource_id), session)
 
 
 @router.patch("/resources/{resource_id}", response_model=ResourceOut)
@@ -306,7 +355,7 @@ def update_resource(resource_id: int, payload: ResourceUpdate,
     session.add(resource)
     session.flush()
     _write_last_used(session, resource)
-    return _out(resource)
+    return _out(resource, session)
 
 
 @router.delete("/resources/{resource_id}", status_code=204)
@@ -340,7 +389,7 @@ def open_resource(resource_id: int,
         and re.match(r"^https?://", resource.url, re.IGNORECASE)
     ):
         webbrowser.open(resource.url)
-    return _out(resource)
+    return _out(resource, session)
 
 
 # --------------------------------------------------------------------------
@@ -449,3 +498,144 @@ def detect_resources_in_note(session: Session, note_id: int) -> list[int]:
                                          resource_id=resource.id))
     session.flush()
     return touched
+
+
+# --------------------------------------------------------------------------
+# Groups and tags
+#
+# "Add some type to resources like tags and be able to group resources under
+# different headings and within each it should be able to have certain tags."
+#
+# A heading is where a thing is filed — one per resource, so the library has a
+# shape. Tags are what it is about — many per resource, and shared across
+# headings, so "interview" can cut across everything.
+# --------------------------------------------------------------------------
+
+@router.get("/resource-groups", response_model=list[ResourceGroupOut])
+def list_groups(session: Session = Depends(get_session)) -> list[ResourceGroupOut]:
+    groups = session.exec(
+        select(ResourceGroup)
+        .where(ResourceGroup.deleted_at.is_(None))
+        .order_by(ResourceGroup.position, ResourceGroup.id)
+    ).all()
+
+    counts: dict[int, int] = {}
+    for resource in session.exec(
+        select(Resource).where(Resource.deleted_at.is_(None),
+                               Resource.group_id.is_not(None))
+    ).all():
+        counts[resource.group_id] = counts.get(resource.group_id, 0) + 1
+
+    return [
+        ResourceGroupOut(id=g.id, name=g.name, colour=g.colour,
+                         position=g.position,
+                         resource_count=counts.get(g.id, 0))
+        for g in groups
+    ]
+
+
+@router.post("/resource-groups", response_model=ResourceGroupOut, status_code=201)
+def create_group(payload: ResourceGroupIn,
+                 session: Session = Depends(get_session)) -> ResourceGroupOut:
+    last = session.exec(
+        select(ResourceGroup).where(ResourceGroup.deleted_at.is_(None))
+        .order_by(ResourceGroup.position.desc())
+    ).first()
+    group = ResourceGroup(
+        name=payload.name.strip(),
+        colour=payload.colour,
+        position=(payload.position if payload.position is not None
+                  else ((last.position + 1) if last else 0)),
+    )
+    session.add(group)
+    session.flush()
+    return ResourceGroupOut(id=group.id, name=group.name, colour=group.colour,
+                            position=group.position, resource_count=0)
+
+
+@router.patch("/resource-groups/{group_id}", response_model=ResourceGroupOut)
+def rename_group(group_id: int, payload: ResourceGroupIn,
+                 session: Session = Depends(get_session)) -> ResourceGroupOut:
+    group = session.get(ResourceGroup, group_id)
+    if group is None or group.deleted_at is not None:
+        raise HTTPException(404, "Group not found")
+    group.name = payload.name.strip()
+    if payload.colour is not None:
+        group.colour = payload.colour
+    if payload.position is not None:
+        group.position = payload.position
+    session.add(group)
+    session.flush()
+    return ResourceGroupOut(id=group.id, name=group.name, colour=group.colour,
+                            position=group.position, resource_count=0)
+
+
+@router.delete("/resource-groups/{group_id}", status_code=204)
+def delete_group(group_id: int, session: Session = Depends(get_session)) -> None:
+    """The heading goes; the resources under it do not.
+
+    Deleting a shelf is not deleting the books on it — they fall back to
+    ungrouped, where they can be filed again.
+    """
+    group = session.get(ResourceGroup, group_id)
+    if group is None or group.deleted_at is not None:
+        raise HTTPException(404, "Group not found")
+    group.deleted_at = _now()
+    session.add(group)
+    for resource in session.exec(
+        select(Resource).where(Resource.group_id == group_id)
+    ).all():
+        resource.group_id = None
+        session.add(resource)
+
+
+@router.get("/tags", response_model=list[TagOut])
+def list_tags(session: Session = Depends(get_session)) -> list[TagOut]:
+    rows = session.exec(select(Tag).order_by(Tag.name)).all()
+    return [TagOut(id=t.id, name=t.name, colour=t.colour) for t in rows]
+
+
+def _tag_named(session: Session, name: str, colour: str | None = None) -> Tag:
+    """Get-or-create, case-insensitively: typing "Interview" twice should not
+    leave two tags that look identical in a filter list."""
+    cleaned = name.strip()
+    for tag in session.exec(select(Tag)).all():
+        if tag.name.lower() == cleaned.lower():
+            return tag
+    tag = Tag(name=cleaned, colour=colour)
+    session.add(tag)
+    session.flush()
+    return tag
+
+
+@router.post("/resources/{resource_id}/tags", response_model=ResourceOut)
+def add_tag(resource_id: int, payload: TagIn,
+            session: Session = Depends(get_session)) -> ResourceOut:
+    resource = _get_resource(session, resource_id)
+    tag = _tag_named(session, payload.name, payload.colour)
+
+    already = session.exec(
+        select(Tagging).where(Tagging.tag_id == tag.id,
+                              Tagging.target_type == "resource",
+                              Tagging.target_id == resource_id)
+    ).first()
+    if already is None:
+        session.add(Tagging(tag_id=tag.id, target_type="resource",
+                            target_id=resource_id))
+        session.flush()
+    return _out(resource, session)
+
+
+@router.delete("/resources/{resource_id}/tags/{tag_id}", response_model=ResourceOut)
+def remove_tag(resource_id: int, tag_id: int,
+               session: Session = Depends(get_session)) -> ResourceOut:
+    resource = _get_resource(session, resource_id)
+    for row in session.exec(
+        select(Tagging).where(Tagging.tag_id == tag_id,
+                              Tagging.target_type == "resource",
+                              Tagging.target_id == resource_id)
+    ).all():
+        # A tagging is a join row, not content: removing it is a real delete.
+        session.delete(row)
+    session.flush()
+    return _out(resource, session)
