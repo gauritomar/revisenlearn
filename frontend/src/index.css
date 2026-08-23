@@ -175,6 +175,25 @@ body {
 .note-prose .hljs-emphasis     { font-style: italic; }
 .note-prose .hljs-deletion     { color: var(--color-stale); }
 
+/* A block held back from processing: written down, not studied yet. Quiet —
+   it is a note about the note, not a warning. */
+.note-prose [data-parked='true'] {
+  position: relative;
+  opacity: 0.72;
+}
+.note-prose [data-parked='true']::after {
+  content: 'parked';
+  position: absolute;
+  top: 0.1rem;
+  right: 0;
+  font-family: var(--font-ui);
+  font-size: 0.5625rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-faint);
+  pointer-events: none;
+}
+
 /* §3 — the automatic day marker in a note that spans months. */
 .note-prose .date-divider {
   display: flex;

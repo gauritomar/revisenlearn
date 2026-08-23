@@ -68,6 +68,26 @@ class JobDetail(BaseModel):
     runs: list[LLMRunOut]
 
 
+class PendingSection(BaseModel):
+    """One chunk as the pipeline would build it (§8.3): a heading and the
+    blocks under it. The preview shows these rather than loose bullets —
+    "if every bullet point becomes a block it becomes too much to look over"
+    — and it is also what actually gets sent, so the list is honest."""
+
+    key: str
+    heading: str
+    note_id: int
+    note_title: str
+    page_kind: str | None = None
+    page_id: int | None = None
+    block_ids: list[int]
+    blocks: list["PendingBlock"]
+    estimated_tokens: int
+    #: True when every block in it is parked. Held-back sections are still
+    #: listed, so they can be brought back.
+    skipped: bool = False
+
+
 class PendingBlock(BaseModel):
     """One block that would be sent, with enough text to recognise it — and
     where it came from, so the preview can take the user there."""
@@ -78,9 +98,15 @@ class PendingBlock(BaseModel):
     block_type: str
     snippet: str
     state: str          # unprocessed | stale
+    #: Parked by hand, and therefore not going anywhere.
+    skipped: bool = False
     #: The page this note belongs to, for "click it and go there".
     page_kind: str | None = None
     page_id: int | None = None
+
+
+# PendingSection refers to PendingBlock before it is defined.
+PendingSection.model_rebuild()
 
 
 class PendingOut(BaseModel):
@@ -90,6 +116,7 @@ class PendingOut(BaseModel):
     unprocessed_blocks: int
     subject_id: int | None = None
     blocks: list[PendingBlock] = []
+    sections: list[PendingSection] = []
     estimated_tokens: int = 0
 
 
@@ -109,8 +136,9 @@ def pending(subject_id: int | None = None,
     The count is always returned; the block list only when asked for, so the
     button's badge stays a cheap poll.
     """
-    from ..models import Note
-    from ..pipeline.chunking import CHARS_PER_TOKEN
+    from ..models import Note, NoteBlock
+    from ..pipeline.chunking import CHARS_PER_TOKEN, ChunkBlock, chunk_blocks
+    from ..tree import has_real_content, on_a_live_page
 
     blocks = unprocessed_blocks(session, subject_id)
     out = PendingOut(unprocessed_blocks=len(blocks), subject_id=subject_id)
@@ -157,7 +185,119 @@ def pending(subject_id: int | None = None,
     out.estimated_tokens = sum(
         max(1, len(b.text or "") // CHARS_PER_TOKEN) for b in blocks
     )
+
+    # …and the same thing grouped the way it will actually be sent: one entry
+    # per chunk (§8.3 groups consecutive blocks under a heading), so the list
+    # is a handful of sections rather than every bullet in the note. Parked
+    # blocks are included here — greyed, not hidden — because the preview is
+    # also where they are brought back.
+    by_id = {b.id: b for b in blocks}
+    candidates: dict[int, list[NoteBlock]] = {}
+    for block in session.exec(
+        select(NoteBlock)
+        .where(NoteBlock.deleted_at.is_(None))
+        .order_by(NoteBlock.note_id, NoteBlock.position)
+    ).all():
+        if block.id in by_id:
+            candidates.setdefault(block.note_id, []).append(block)
+            continue
+        # A parked block only belongs in the list if it would otherwise have
+        # been sent: unprocessed, real writing, on a page that still exists.
+        if not block.skip_processing:
+            continue
+        if block.processed_hash == block.content_hash or not has_real_content(block):
+            continue
+        note = session.get(Note, block.note_id)
+        if note is None or note.deleted_at is not None or not on_a_live_page(session, note):
+            continue
+        if subject_id is not None and note.subject_id != subject_id:
+            continue
+        candidates.setdefault(block.note_id, []).append(block)
+
+    sections: list[PendingSection] = []
+    for note_id, note_blocks in candidates.items():
+        note = session.get(Note, note_id)
+        title, page_kind, page_id = seen.get(
+            note_id,
+            (note.title if note else "(untitled)", *page_of(note)),
+        )
+        chunkable = [
+            ChunkBlock(block_id=b.id, note_id=b.note_id,
+                       block_type=b.block_type, text=b.text or "")
+            for b in sorted(note_blocks, key=lambda b: b.position)
+        ]
+        parked = {b.id for b in note_blocks if b.skip_processing}
+
+        for index, chunk in enumerate(chunk_blocks(chunkable)):
+            heading = next(
+                (b.text for b in chunk.blocks
+                 if b.block_type in ("heading1", "heading2", "heading3")),
+                "",
+            )
+            members = []
+            for member in chunk.blocks:
+                text = (member.text or "").strip()
+                members.append(PendingBlock(
+                    note_block_id=member.block_id,
+                    note_id=note_id,
+                    note_title=title,
+                    block_type=member.block_type,
+                    snippet=text[:160] + ("…" if len(text) > 160 else ""),
+                    state=("stale" if by_id.get(member.block_id) is not None
+                           and by_id[member.block_id].processed_hash is not None
+                           else "unprocessed"),
+                    skipped=member.block_id in parked,
+                    page_kind=page_kind,
+                    page_id=page_id,
+                ))
+            sections.append(PendingSection(
+                key=f"{note_id}-{index}",
+                heading=heading or (members[0].snippet[:60] if members else "Untitled"),
+                note_id=note_id,
+                note_title=title,
+                page_kind=page_kind,
+                page_id=page_id,
+                block_ids=[m.note_block_id for m in members],
+                blocks=members,
+                estimated_tokens=chunk.estimated_tokens,
+                skipped=all(m.note_block_id in parked for m in members),
+            ))
+
+    out.sections = sections
     return out
+
+
+class SkipIn(BaseModel):
+    """Park some blocks, or bring them back."""
+
+    block_ids: list[int]
+    skip: bool = True
+
+
+@router.post("/pipeline/skip")
+def set_skipped(payload: SkipIn,
+                session: Session = Depends(get_session)) -> dict:
+    """Hold blocks back from processing, and remember it.
+
+    "Sometimes in my notes I leave some blocks which are not done but just
+    left because I'm yet to study them and I don't want them processed."
+
+    The flag lives on the block, so a section parked today is still parked
+    next week — and editing that block later does not silently un-park it.
+    """
+    from ..models import NoteBlock
+
+    changed = 0
+    for block_id in payload.block_ids:
+        block = session.get(NoteBlock, block_id)
+        if block is None or block.deleted_at is not None:
+            continue
+        if block.skip_processing != payload.skip:
+            block.skip_processing = payload.skip
+            session.add(block)
+            changed += 1
+    session.flush()
+    return {"changed": changed, "skip": payload.skip}
 
 
 @router.post("/pipeline/run", response_model=JobOut, status_code=202)

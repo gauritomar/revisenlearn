@@ -131,6 +131,8 @@ class BlockOut(BaseModel):
     url: Optional[str] = None
     language: Optional[str] = None
     parent_block_id: Optional[int] = None
+    #: Held back from the pipeline until the user says otherwise.
+    skip_processing: bool = False
     content_hash: str
     processed_hash: Optional[str] = None
     #: Derived for the §4.2 indicator so the frontend does not re-implement it.

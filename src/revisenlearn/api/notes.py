@@ -96,6 +96,7 @@ def _block_out(block: NoteBlock) -> BlockOut:
         url=block.url,
         language=block.language,
         parent_block_id=block.parent_block_id,
+        skip_processing=block.skip_processing,
         content_hash=block.content_hash,
         processed_hash=block.processed_hash,
         state=_block_state(block),

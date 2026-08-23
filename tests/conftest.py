@@ -229,6 +229,26 @@ def _open_page(browser, instance: AppProcess):
         context.close()
 
 
+def wait_for_query(app, sql: str, expected, params: tuple = (),
+                   timeout: float = 10.0):
+    """Poll the database until a query returns what is expected.
+
+    The UI flips optimistically where a round trip would feel slow, so
+    "the screen says so" and "it is written down" are two different moments.
+    Assertions about storage wait for the second one.
+    """
+    import time as _time
+
+    deadline = _time.monotonic() + timeout
+    seen = None
+    while _time.monotonic() < deadline:
+        seen = app.query(sql, params)
+        if seen == expected:
+            return seen
+        _time.sleep(0.1)
+    raise AssertionError(f"{sql!r} returned {seen!r}, expected {expected!r}")
+
+
 def assert_is_today(value: str) -> None:
     """Assert a study_date is "today", without breaking at midnight.
 

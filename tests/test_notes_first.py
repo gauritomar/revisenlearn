@@ -778,3 +778,100 @@ def test_the_resources_page_is_not_a_day_of_study(client) -> None:
 
 def test_an_unknown_scratch_page_is_a_404(client) -> None:
     assert client.get("/api/notes/scratch/banana").status_code == 404
+
+
+# --------------------------------------------------------------------------
+# Sections, and blocks held back
+# --------------------------------------------------------------------------
+
+def _sectioned_note(client) -> dict:
+    """A note shaped like a real one: two headings, bullets under each."""
+    tree = _tree(client)
+    note = client.post("/api/notes/ensure",
+                       json={"subtopic_id": tree["subtopic"]["id"]}).json()
+    blocks = [
+        ("heading3", "String Functions"),
+        ("bullet_list_item", "Roman numerals: subtract when a smaller value "
+                             "precedes a larger one, otherwise add it."),
+        ("bullet_list_item", "ord() converts a character into its Unicode "
+                             "integer value, useful for comparing characters."),
+        ("heading3", "Knuth-Morris-Pratt / Rabin-Karp"),
+        ("bullet_list_item", "https://codechef.com/problems/ZFUNCTION"),
+        ("bullet_list_item", "https://codechef.com/problems/SHORTPALINDR"),
+    ]
+    client.put(f"/api/notes/{note['id']}/blocks", json={"blocks": [
+        {"id": None, "position": i, "block_type": bt, "text": text}
+        for i, (bt, text) in enumerate(blocks)
+    ]})
+    return client.get(f"/api/notes/{note['id']}").json()
+
+
+def test_the_preview_is_grouped_into_the_sections_that_get_sent(client) -> None:
+    """"Can we process section wise instead of block wise, because otherwise
+    if every bullet point becomes a block it becomes too much to look over."
+
+    §8.3 already chunks by heading; the preview now shows those chunks, so
+    what is listed is what is sent.
+    """
+    _sectioned_note(client)
+
+    preview = client.get("/api/pipeline/pending", params={"preview": True}).json()
+
+    assert preview["unprocessed_blocks"] == 6
+    assert [s["heading"] for s in preview["sections"]] == [
+        "String Functions", "Knuth-Morris-Pratt / Rabin-Karp"]
+    assert [len(s["blocks"]) for s in preview["sections"]] == [3, 3]
+    assert all(s["estimated_tokens"] > 0 for s in preview["sections"])
+
+
+def test_a_section_can_be_held_back_and_stays_held_back(client) -> None:
+    """"Sometimes in my notes I leave some blocks which are not done but just
+    left because I'm yet to study them and I don't want them processed.\""""
+    _sectioned_note(client)
+    preview = client.get("/api/pipeline/pending", params={"preview": True}).json()
+    parked = preview["sections"][1]
+
+    client.post("/api/pipeline/skip",
+                json={"block_ids": parked["block_ids"], "skip": True})
+
+    after = client.get("/api/pipeline/pending", params={"preview": True}).json()
+    assert after["unprocessed_blocks"] == 3
+    # Still listed, so it can be brought back — greyed, not hidden.
+    assert [s["skipped"] for s in after["sections"]] == [False, True]
+
+    # And it is genuinely not sent.
+    job = client.post("/api/pipeline/run", json={}).json()
+    body = client.get(f"/api/pipeline/jobs/{job['id']}").json()
+    assert body["job"]["block_count"] == 3
+
+
+def test_a_held_back_section_can_be_brought_back(client) -> None:
+    note = _sectioned_note(client)
+    ids = [b["id"] for b in note["blocks"][3:]]
+
+    client.post("/api/pipeline/skip", json={"block_ids": ids, "skip": True})
+    assert client.get("/api/pipeline/pending").json()["unprocessed_blocks"] == 3
+
+    client.post("/api/pipeline/skip", json={"block_ids": ids, "skip": False})
+    assert client.get("/api/pipeline/pending").json()["unprocessed_blocks"] == 6
+
+
+def test_editing_a_parked_block_leaves_it_parked(client) -> None:
+    """Tidying a line you have not studied yet is not the same as deciding to
+    study it."""
+    note = _sectioned_note(client)
+    target = note["blocks"][4]
+    client.post("/api/pipeline/skip",
+                json={"block_ids": [target["id"]], "skip": True})
+
+    client.put(f"/api/notes/{note['id']}/blocks", json={"blocks": [
+        {"id": b["id"], "position": i, "block_type": b["block_type"],
+         "text": (b["text"] + " (Z-function)" if b["id"] == target["id"]
+                  else b["text"])}
+        for i, b in enumerate(note["blocks"])
+    ]})
+
+    reopened = client.get(f"/api/notes/{note['id']}").json()
+    edited = next(b for b in reopened["blocks"] if b["id"] == target["id"])
+    assert edited["skip_processing"] is True
+    assert "Z-function" in edited["text"]

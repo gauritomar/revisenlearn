@@ -10,6 +10,8 @@ from __future__ import annotations
 import httpx
 import pytest
 
+from conftest import wait_for_query
+
 pytestmark = pytest.mark.ui
 
 
@@ -560,3 +562,61 @@ def test_the_two_verdicts_are_told_apart_by_colour(mock_page, mock_app) -> None:
     wrong = page.get_by_test_id("override-wrong").evaluate(
         "el => getComputedStyle(el).color")
     assert got != wrong
+
+
+def test_the_gemini_popup_lists_sections_and_remembers_what_you_untick(page, app) -> None:
+    """"When the send to Gemini pop up comes up I should be able to choose all
+    the blocks/sections that [are] going for processing" — and a section
+    parked today should still be parked tomorrow."""
+    tree = _tree(app.base_url)
+    with httpx.Client(base_url=app.base_url, timeout=30) as c:
+        note = c.post("/api/notes/ensure",
+                      json={"subtopic_id": tree["subtopic"]["id"]}).json()
+        blocks = [
+            ("heading3", "String Functions"),
+            ("bullet_list_item", "Roman numerals: subtract when a smaller value "
+                                 "precedes a larger one, otherwise add it."),
+            ("bullet_list_item", "ord() converts a character to its Unicode value."),
+            ("heading3", "Knuth-Morris-Pratt / Rabin-Karp"),
+            ("bullet_list_item", "https://codechef.com/problems/ZFUNCTION"),
+            ("bullet_list_item", "https://codechef.com/problems/SHORTPALINDR"),
+        ]
+        c.put(f"/api/notes/{note['id']}/blocks", json={"blocks": [
+            {"id": None, "position": i, "block_type": bt, "text": text}
+            for i, (bt, text) in enumerate(blocks)
+        ]})
+
+    page.reload(wait_until="networkidle")
+    page.get_by_test_id("process-notes").click()
+    page.get_by_test_id("preview-sections").wait_for(state="visible")
+    page.wait_for_function(
+        "() => document.querySelectorAll('[data-testid^=\"preview-section-\"]').length === 2",
+        timeout=10_000,
+    )
+
+    listed = page.get_by_test_id("preview-sections").inner_text()
+    assert "String Functions" in listed
+    assert "Knuth-Morris-Pratt" in listed
+
+    keys = page.evaluate(
+        """() => [...document.querySelectorAll('[data-testid^=preview-section-]')]
+             .map(e => e.dataset.testid.replace('preview-section-', ''))"""
+    )
+    page.get_by_test_id(f"preview-toggle-{keys[1]}").click()
+    page.wait_for_function(
+        f"() => document.querySelector('[data-testid=\"preview-section-{keys[1]}\"]')"
+        f"?.dataset.skipped === 'true'",
+        timeout=10_000,
+    )
+    wait_for_query(
+        app, "SELECT count(*) FROM note_blocks WHERE skip_processing = 1", [(3,)])
+
+    # Escape closes it, and reopening remembers.
+    page.keyboard.press("Escape")
+    page.get_by_test_id("process-notes").wait_for(state="visible")
+    page.get_by_test_id("process-notes").click()
+    page.wait_for_function(
+        f"() => document.querySelector('[data-testid=\"preview-section-{keys[1]}\"]')"
+        f"?.dataset.skipped === 'true'",
+        timeout=10_000,
+    )

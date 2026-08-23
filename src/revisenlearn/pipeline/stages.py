@@ -154,6 +154,9 @@ def unprocessed_blocks(session: Session,
                                             NoteBlock.position)).all():
         if block.processed_hash == block.content_hash or not _has_content(block):
             continue
+        # Parked by hand: written down, not studied yet, not to be paid for.
+        if block.skip_processing:
+            continue
         if block.note_id not in live:
             note = session.get(Note, block.note_id)
             live[block.note_id] = (note is not None

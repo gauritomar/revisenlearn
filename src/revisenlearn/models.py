@@ -173,6 +173,11 @@ class NoteBlock(SQLModel, table=True):
     #: `code_block` blocks only: which grammar to highlight with. Stored so a
     #: note reopens as it was written, rather than guessing from the text.
     language: Optional[str] = None
+    #: Held back from the pipeline: "sometimes in my notes I leave some blocks
+    #: which are not done but just left because I'm yet to study them and I
+    #: don't want them processed." Set from the send-to-Gemini preview and
+    #: remembered, so a section parked today is still parked next week.
+    skip_processing: bool = False
     #: One level of nesting only.
     parent_block_id: Optional[int] = Field(default=None,
                                            foreign_key="note_blocks.id")

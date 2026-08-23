@@ -115,6 +115,8 @@ export type Block = {
   url: string | null
   language: string | null
   parent_block_id: number | null
+  /** Held back from the pipeline until you say otherwise. */
+  skip_processing: boolean
   content_hash: string
   processed_hash: string | null
   state: BlockState
@@ -555,8 +557,23 @@ export type PendingBlock = {
   block_type: string
   snippet: string
   state: string
+  skipped: boolean
   page_kind: TreeKind | null
   page_id: number | null
+}
+
+/** One chunk as the pipeline would build it: a heading and what is under it. */
+export type PendingSection = {
+  key: string
+  heading: string
+  note_id: number
+  note_title: string
+  page_kind: TreeKind | null
+  page_id: number | null
+  block_ids: number[]
+  blocks: PendingBlock[]
+  estimated_tokens: number
+  skipped: boolean
 }
 
 export type SearchHit = {
@@ -754,9 +771,15 @@ export const api = {
       unprocessed_blocks: number
       estimated_tokens: number
       blocks: PendingBlock[]
+      sections: PendingSection[]
     }>(
       `/api/pipeline/pending?preview=true${subjectId ? `&subject_id=${subjectId}` : ''}`,
     ),
+  setBlocksSkipped: (blockIds: number[], skip: boolean) =>
+    request<{ changed: number; skip: boolean }>('/api/pipeline/skip', {
+      method: 'POST',
+      body: JSON.stringify({ block_ids: blockIds, skip }),
+    }),
   runPipeline: (subject_id?: number | null) =>
     request<PipelineJob>('/api/pipeline/run', {
       method: 'POST',

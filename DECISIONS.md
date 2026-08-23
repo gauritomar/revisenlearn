@@ -1008,7 +1008,50 @@ escalation, so it is a wash and a border rather than a filled red button.
 
 ---
 
-## 16. What is not built
+## 16. Sections, and the right to not be ready
+
+### The preview shows chunks, because chunks are what get sent
+
+"Can we process section wise instead of block wise, because otherwise if every
+bullet point becomes a block it becomes too much to look over."
+
+The pipeline was already section-wise: §8.3 groups consecutive blocks under a
+heading, so a chunk is a heading and what sits beneath it. Only the *preview*
+was block-wise, listing every bullet in the note as a separate line. It now
+renders the chunks the chunker actually builds — same function, same grouping
+— so the list is a handful of sections and it is, literally, what is about to
+be sent.
+
+### A block can be written down without being ready
+
+"Sometimes in my notes I leave some blocks which are not done but just left
+because I'm yet to study them and I don't want them processed."
+
+That is a real state, and nothing in the model expressed it. A block was
+either unwritten, unprocessed, or processed — with no way to say "written, and
+deliberately not yet". `note_blocks.skip_processing` is that state. It is set
+from the send-to-Gemini dialog by unticking a section, and it is remembered:
+a section parked today is still parked next week, and **editing a parked block
+does not un-park it** — tidying a line you have not studied is not the same as
+deciding to study it.
+
+Parked sections stay listed in the dialog, greyed rather than hidden, because
+the dialog is also where they are brought back. In the editor they carry a
+quiet "parked" marker, so the state is visible where the writing is rather
+than only at the moment of spending.
+
+### The tick flips before the write lands
+
+Unticking a section writes to the database, which takes a moment. The checkbox
+flips immediately and the write follows, because a checkbox that waits for a
+round trip feels broken — and this is a judgement the user has already made,
+not a request for permission. The consequence for tests: "the screen says so"
+and "it is written down" are two different moments, and assertions about
+storage have to wait for the second one (`wait_for_query`).
+
+---
+
+## 17. What is not built
 
 Honest list, so nothing here is a surprise.
 

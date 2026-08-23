@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
-import { api, type PendingBlock, type PipelineJob } from '../lib/api'
+import { api, type PendingSection, type PipelineJob } from '../lib/api'
 import { useUI } from '../store/ui'
 
 /** Spec §14 — the **Process notes** button, showing the unprocessed count.
@@ -65,7 +65,7 @@ export function ProcessNotes({ pendingHint }: { pendingHint?: number }) {
   }
 
   if (confirming) {
-    return <Preview count={count} onCancel={() => setConfirming(false)}
+    return <Preview onCancel={() => setConfirming(false)}
                     onConfirm={() => run.mutate()} pending={run.isPending} />
   }
 
@@ -108,12 +108,14 @@ export function ProcessNotes({ pendingHint }: { pendingHint?: number }) {
  *  what's paying for it." So the confirmation is not a yes/no box: it lists
  *  every block that would be sent, with a snippet, grouped by note.
  */
-function Preview({ count, onConfirm, onCancel, pending }: {
-  count: number
+function Preview({ onConfirm, onCancel, pending }: {
   onConfirm: () => void
   onCancel: () => void
   pending: boolean
 }) {
+  const openPage = useUI((s) => s.openPage)
+  const qc = useQueryClient()
+
   const { data } = useQuery({
     queryKey: ['pipeline-preview'],
     queryFn: () => api.pendingPreview(),
@@ -123,13 +125,53 @@ function Preview({ count, onConfirm, onCancel, pending }: {
     refetchOnMount: 'always',
   })
 
-  const openPage = useUI((s) => s.openPage)
+  /** Parking is remembered on the block, so it survives this dialog. The tick
+   *  flips at once and the write follows: a checkbox that waits for a round
+   *  trip feels broken, and this one is a judgement the user has already
+   *  made. */
+  const [pendingSkip, setPendingSkip] = useState<Record<string, boolean>>({})
+  const park = useMutation({
+    mutationFn: ({ blockIds, skip }: {
+      key: string; blockIds: number[]; skip: boolean
+    }) => api.setBlocksSkipped(blockIds, skip),
+    onSuccess: async (_result, variables) => {
+      await qc.invalidateQueries({ queryKey: ['pipeline-preview'] })
+      await qc.invalidateQueries({ queryKey: ['pipeline-pending'] })
+      setPendingSkip((current) => {
+        const next = { ...current }
+        delete next[variables.key]
+        return next
+      })
+    },
+  })
 
-  const grouped = new Map<string, PendingBlock[]>()
-  for (const block of data?.blocks ?? []) {
-    const list = grouped.get(block.note_title) ?? []
-    list.push(block)
-    grouped.set(block.note_title, list)
+  const isSkipped = (section: PendingSection) =>
+    pendingSkip[section.key] ?? section.skipped
+
+  // Escape closes it, like every other dialog here. Without this the only
+  // way out is the Cancel button, which is a trap on a modal that covers the
+  // thing you were reading.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onCancel()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onCancel])
+
+  const sections = (data?.sections ?? []).map((section) => ({
+    ...section,
+    skipped: isSkipped(section),
+  }))
+  const sending = sections.filter((s) => !s.skipped)
+  const tokens = sending.reduce((n, s) => n + s.estimated_tokens, 0)
+
+  // Grouped by note, so a section reads under the page it came from.
+  const byNote = new Map<string, PendingSection[]>()
+  for (const section of sections) {
+    const list = byNote.get(section.note_title) ?? []
+    list.push(section)
+    byNote.set(section.note_title, list)
   }
 
   return (
@@ -143,36 +185,40 @@ function Preview({ count, onConfirm, onCancel, pending }: {
         aria-modal="true"
         aria-label="What will be sent"
         data-testid="process-preview"
-        className="flex max-h-[70vh] w-full max-w-xl flex-col rounded-xl border border-line bg-surface shadow-xl"
+        className="flex max-h-[74vh] w-full max-w-xl flex-col rounded-xl border border-line bg-surface shadow-xl"
       >
         <div className="border-b border-line-soft p-4">
           <h2 className="text-[0.9375rem] font-semibold tracking-tight text-ink">
-            Send {count} block{count === 1 ? '' : 's'} to Gemini?
+            Send {sending.length} section{sending.length === 1 ? '' : 's'} to Gemini?
           </h2>
           <p className="mt-1 text-[0.75rem] leading-relaxed text-muted">
-            This is what will be sent, and it costs money.
-            {data ? ` Roughly ${data.estimated_tokens.toLocaleString()} input tokens.` : ''}
+            Notes are sent a section at a time, not a bullet at a time — this
+            is exactly what goes.{' '}
+            {data ? `Roughly ${tokens.toLocaleString()} input tokens.` : ''}
+          </p>
+          <p className="mt-1 text-[0.75rem] leading-relaxed text-faint">
+            Untick anything you have written down but not studied yet. It stays
+            unticked until you say otherwise.
           </p>
         </div>
 
-        <div className="min-h-0 flex-1 overflow-y-auto p-3" data-testid="preview-blocks">
+        <div className="min-h-0 flex-1 overflow-y-auto p-3" data-testid="preview-sections">
           {!data ? (
             <p className="text-[0.8125rem] text-faint">Loading…</p>
+          ) : sections.length === 0 ? (
+            <p className="text-[0.8125rem] text-faint">Nothing new to send.</p>
           ) : (
-            [...grouped.entries()].map(([title, blocks]) => (
+            [...byNote.entries()].map(([title, group]) => (
               <section key={title} className="mb-3">
-                {/* The heading is the way back to the writing: seeing a
-                    snippet you do not recognise should not mean closing this
-                    and hunting for it. */}
                 <h3 className="mb-1 text-[0.75rem] font-medium text-ink">
-                  {blocks[0]?.page_kind && blocks[0]?.page_id ? (
+                  {group[0]?.page_kind && group[0]?.page_id ? (
                     <button
                       type="button"
                       onClick={() => {
-                        openPage(blocks[0].page_kind!, blocks[0].page_id!)
+                        openPage(group[0].page_kind!, group[0].page_id!)
                         onCancel()
                       }}
-                      data-testid={`preview-open-${blocks[0].page_kind}-${blocks[0].page_id}`}
+                      data-testid={`preview-open-${group[0].page_kind}-${group[0].page_id}`}
                       className="rounded px-1 py-0.5 text-accent-deep transition hover:bg-accent-wash"
                     >
                       {title} →
@@ -181,23 +227,76 @@ function Preview({ count, onConfirm, onCancel, pending }: {
                     title
                   )}
                 </h3>
-                <ul className="space-y-0.5">
-                  {blocks.map((block) => (
+
+                <ul className="space-y-1">
+                  {group.map((section) => (
                     <li
-                      key={block.note_block_id}
-                      data-testid={`preview-block-${block.note_block_id}`}
-                      className="flex items-baseline gap-2 rounded px-1.5 py-1 text-[0.75rem] odd:bg-paper"
+                      key={section.key}
+                      data-testid={`preview-section-${section.key}`}
+                      data-skipped={section.skipped ? 'true' : 'false'}
+                      className={[
+                        'rounded-md border p-2 transition',
+                        section.skipped
+                          ? 'border-line-soft bg-sunken/40 opacity-60'
+                          : 'border-line bg-paper',
+                      ].join(' ')}
                     >
-                      <span
-                        className={`shrink-0 text-[0.625rem] uppercase tracking-wide ${
-                          block.state === 'stale' ? 'text-stale' : 'text-faint'
-                        }`}
-                      >
-                        {block.state === 'stale' ? 'edited' : 'new'}
-                      </span>
-                      <span className="min-w-0 flex-1 truncate text-ink-soft">
-                        {block.snippet}
-                      </span>
+                      <label className="flex items-start gap-2">
+                        <input
+                          type="checkbox"
+                          checked={!section.skipped}
+                          onChange={(e) => {
+                            const skip = !e.target.checked
+                            setPendingSkip((current) => ({
+                              ...current, [section.key]: skip,
+                            }))
+                            park.mutate({
+                              key: section.key,
+                              blockIds: section.block_ids,
+                              skip,
+                            })
+                          }}
+                          data-testid={`preview-toggle-${section.key}`}
+                          aria-label={`Send ${section.heading}`}
+                          className="mt-0.5 size-3.5 shrink-0 accent-[var(--color-accent)]"
+                        />
+                        <span className="min-w-0 flex-1">
+                          <span className="flex items-baseline gap-2">
+                            <span className="min-w-0 flex-1 truncate text-[0.8125rem] font-medium text-ink">
+                              {section.heading}
+                            </span>
+                            <span className="shrink-0 text-[0.625rem] tabular-nums text-faint">
+                              {section.blocks.length} block
+                              {section.blocks.length === 1 ? '' : 's'} · ~
+                              {section.estimated_tokens}t
+                            </span>
+                          </span>
+                          <ul className="mt-1 space-y-0.5">
+                            {section.blocks
+                              .filter((block) =>
+                                !['heading1', 'heading2', 'heading3']
+                                  .includes(block.block_type))
+                              .map((block) => (
+                              <li
+                                key={block.note_block_id}
+                                data-testid={`preview-block-${block.note_block_id}`}
+                                className="flex items-baseline gap-2 text-[0.6875rem]"
+                              >
+                                <span
+                                  className={`shrink-0 uppercase tracking-wide ${
+                                    block.state === 'stale' ? 'text-stale' : 'text-faint'
+                                  }`}
+                                >
+                                  {block.state === 'stale' ? 'edited' : 'new'}
+                                </span>
+                                <span className="min-w-0 flex-1 truncate text-muted">
+                                  {block.snippet}
+                                </span>
+                              </li>
+                              ))}
+                          </ul>
+                        </span>
+                      </label>
                     </li>
                   ))}
                 </ul>
@@ -217,9 +316,9 @@ function Preview({ count, onConfirm, onCancel, pending }: {
           <button
             type="button"
             onClick={onConfirm}
-            disabled={pending}
+            disabled={pending || sending.length === 0}
             data-testid="process-notes-confirm"
-            className="rounded-md bg-accent px-3.5 py-1.5 text-[0.8125rem] font-medium text-white transition hover:bg-accent-deep disabled:opacity-50"
+            className="rounded-md bg-accent px-3.5 py-1.5 text-[0.8125rem] font-medium text-white transition hover:bg-accent-deep disabled:cursor-not-allowed disabled:opacity-40"
           >
             {pending ? 'Starting…' : 'Yes, process'}
           </button>

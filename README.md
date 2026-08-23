@@ -149,9 +149,12 @@ the right. The dashboard's **Study next** ranks what to pick up, and the
 calendar shows what you wrote on any day.
 
 When you have written enough, press **Process notes** in the header — it
-counts every pending block in the app, wherever you are. It shows exactly
-which blocks it would send, and each note in that list is a link to the page
-it came from, before it
+counts every pending block in the app, wherever you are. It shows the
+**sections** it would send, grouped exactly as the chunker groups them (a
+heading and what is under it), each with a tick. Untick anything you have
+written down but not studied yet: it stays unticked until you say otherwise,
+shows as *parked* in the editor, and is never paid for. Each note in the list
+links to the page it came from, before it
 spends anything, then extracts concepts from your notes, deduplicates them
 against what you already know, and generates a pool of multiple-choice
 questions per concept. **Runs** shows what each job created and exactly what it
