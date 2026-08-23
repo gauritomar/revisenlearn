@@ -416,7 +416,10 @@ export type GraphNode = {
   importance: number
   difficulty: number | null
   subject: string | null
+  subject_id: number | null
+  subject_colour: string | null
   topic: string | null
+  topic_id: number | null
   subtopic: string | null
   dimmed: boolean
 }

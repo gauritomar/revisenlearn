@@ -95,6 +95,13 @@ def test_the_console_has_two_panes_and_mounts_the_graph(page_graph) -> None:
         "() => document.querySelector('[data-testid=graph-canvas] canvas') !== null",
         timeout=15_000,
     )
+    # The legend renders "0 concepts" before the fetch lands, so wait for the
+    # data rather than reading whichever frame is on screen.
+    page.wait_for_function(
+        "() => document.querySelector('[data-testid=graph-counts]')"
+        "?.textContent.includes('4 concepts')",
+        timeout=15_000,
+    )
     counts = page.get_by_test_id("graph-counts").inner_text()
     assert "4 concepts" in counts
     assert "2 edges" in counts
@@ -110,6 +117,11 @@ def test_all_five_queue_tabs_carry_counts(page_graph) -> None:
                           ("orphans", "1")]:
         badge = page.get_by_test_id(f"count-{tab}")
         badge.wait_for(state="visible")
+        page.wait_for_function(
+            f"() => document.querySelector('[data-testid=count-{tab}]')"
+            f"?.textContent.trim() === '{expected}'",
+            timeout=15_000,
+        )
         assert badge.inner_text().strip() == expected, tab
 
     for tab in ["merge_queue", "proposed_edges", "stale_concepts",
@@ -229,3 +241,29 @@ def test_the_graph_does_not_scroll_sideways_when_narrow(page_graph) -> None:
         "() => document.documentElement.scrollWidth - document.documentElement.clientWidth"
     )
     assert overflow <= 0, f"page scrolls horizontally by {overflow}px at 500px"
+
+
+def test_concepts_are_grouped_by_subject_and_topic(page_graph, graph_app) -> None:
+    """"Let's keep nodes subject/topic wise." Cytoscape compound nodes: a
+    concept sits inside its topic, which sits inside its subject, so a hundred
+    of them read as a curriculum rather than a hairball."""
+    page = page_graph
+    page.wait_for_function(
+        "() => document.querySelector('[data-testid=graph-canvas] canvas') !== null",
+        timeout=15_000,
+    )
+    page.wait_for_function(
+        "() => document.querySelector('[data-testid=graph-counts]')"
+        "?.textContent.includes('4 concepts')",
+        timeout=15_000,
+    )
+
+    # The payload the graph is built from carries the grouping.
+    nodes = page.evaluate(
+        """async () => {
+          const res = await fetch('/api/graph')
+          const body = await res.json()
+          return body.nodes.map(n => ({subject: n.subject_id, topic: n.topic_id}))
+        }"""
+    )
+    assert nodes and all(n["subject"] is not None for n in nodes)

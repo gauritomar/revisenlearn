@@ -6,6 +6,7 @@ import coseBilkent from 'cytoscape-cose-bilkent'
 import {
   api,
   type ConceptRow,
+  type GraphNode,
   type GraphPayload,
   type MergeRow,
   type ProposedEdge,
@@ -98,7 +99,9 @@ export function Graph() {
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search concepts"
             data-testid="graph-search"
-            className="min-w-0 flex-1 rounded-md border border-line bg-paper px-2 py-1 text-[0.8125rem] text-ink outline-none focus:border-accent"
+            // A basis wide enough to read: sharing one flex row with four
+            // selects had squeezed this to "Sear".
+            className="min-w-0 flex-1 basis-48 rounded-md border border-line bg-paper px-2 py-1 text-[0.8125rem] text-ink outline-none focus:border-accent"
           />
           <select
             value={view}
@@ -154,8 +157,9 @@ export function Graph() {
         <Legend counts={graph?.counts} />
       </div>
 
-      {/* Right: the work queue */}
-      <div className="flex min-h-0 w-full shrink-0 flex-col border-t border-line lg:w-96 lg:border-t-0">
+      {/* Right: the work queue. Narrower than it was — it is a list of short
+          rows, and every pixel it took was one the graph did not have. */}
+      <div className="flex min-h-0 w-full shrink-0 flex-col border-t border-line lg:w-72 lg:border-t-0">
         {selected ? (
           <Inspector conceptId={selected} onClose={() => setSelected(null)} />
         ) : (
@@ -206,10 +210,51 @@ function Canvas({ graph, onSelect, onExpand }: {
 
   const elements = useMemo(() => {
     if (!graph) return []
+
+    // Concepts live inside their subject, and inside their topic within it.
+    // A flat force layout of everything is a hairball: grouping is what makes
+    // a hundred nodes readable, and it is the shape the notes already have.
+    const groups = new Map<string, { id: string; label: string; parent?: string; colour: string | null }>()
+    for (const n of graph.nodes) {
+      if (n.subject_id !== null) {
+        const subjectId = `s${n.subject_id}`
+        if (!groups.has(subjectId)) {
+          groups.set(subjectId, {
+            id: subjectId, label: n.subject ?? 'Subject', colour: n.subject_colour,
+          })
+        }
+        if (n.topic_id !== null) {
+          const topicId = `t${n.topic_id}`
+          if (!groups.has(topicId)) {
+            groups.set(topicId, {
+              id: topicId, label: n.topic ?? 'Topic',
+              parent: subjectId, colour: n.subject_colour,
+            })
+          }
+        }
+      }
+    }
+
+    const parentOf = (n: GraphNode) =>
+      n.topic_id !== null ? `t${n.topic_id}`
+        : n.subject_id !== null ? `s${n.subject_id}`
+          : undefined
+
     return [
+      ...[...groups.values()].map((g) => ({
+        data: {
+          id: g.id, label: g.label, parent: g.parent,
+          colour: g.colour ?? '#A9A198',
+          depth: g.parent ? 'topic' : 'subject',
+        },
+        classes: g.parent ? 'topic-group' : 'subject-group',
+        selectable: false,
+        grabbable: false,
+      })),
       ...graph.nodes.map((n) => ({
         data: {
           id: `n${n.id}`, raw: n.id, label: n.name,
+          parent: parentOf(n),
           colour: BADGE_COLOUR[n.badge] ?? BADGE_COLOUR.untested,
           // §13.1 — sized by importance.
           size: 22 + (n.importance ?? 3) * 6,
@@ -246,43 +291,130 @@ function Canvas({ graph, onSelect, onExpand }: {
             height: 'data(size)',
             opacity: 'data(opacity)',
             label: 'data(label)',
-            'font-size': 9,
+            'font-size': 10,
             'font-family': 'ui-sans-serif, -apple-system, sans-serif',
             color: '#4A453F',
             'text-valign': 'bottom',
-            'text-margin-y': 3,
-            'text-max-width': '90px',
-            'text-wrap': 'ellipsis',
+            'text-margin-y': 4,
+            'text-max-width': '120px',
+            // Wrap rather than clip: a concept name cut to "Roman numerals
+            // con…" is not a label, it is a puzzle.
+            'text-wrap': 'wrap',
+            'line-height': 1.2,
+            'border-width': 1.5,
+            'border-color': '#FFFFFF',
+            'border-opacity': 0.9,
+          },
+        },
+        // A subject is a quiet field with its name in the corner; a topic is a
+        // lighter box inside it. Both are backdrops — they never take a click,
+        // so they cannot be mistaken for concepts.
+        {
+          selector: '.subject-group',
+          style: {
+            'background-color': 'data(colour)',
+            'background-opacity': 0.05,
+            'border-width': 1,
+            'border-color': 'data(colour)',
+            'border-opacity': 0.35,
+            'border-style': 'solid',
+            shape: 'round-rectangle',
+            padding: 22,
+            label: 'data(label)',
+            'font-size': 12,
+            'font-weight': 600,
+            color: 'data(colour)',
+            'text-valign': 'top',
+            'text-halign': 'center',
+            'text-margin-y': -6,
+            'text-max-width': '220px',
+          },
+        },
+        {
+          selector: '.topic-group',
+          style: {
+            'background-color': 'data(colour)',
+            'background-opacity': 0.05,
+            'border-width': 1,
+            'border-color': 'data(colour)',
+            'border-opacity': 0.22,
+            'border-style': 'dashed',
+            shape: 'round-rectangle',
+            padding: 14,
+            label: 'data(label)',
+            'font-size': 9,
+            'font-weight': 500,
+            color: '#8A8578',
+            'text-valign': 'top',
+            'text-halign': 'center',
+            'text-margin-y': -3,
+            'text-max-width': '160px',
           },
         },
         {
           selector: 'node:selected',
-          style: { 'border-width': 3, 'border-color': '#4F4FC4' },
+          style: { 'border-width': 3, 'border-color': '#4F4FC4',
+                   'border-opacity': 1 },
         },
         {
           selector: 'edge',
           style: {
-            width: 1.4,
+            width: 1.2,
             'line-color': 'data(colour)',
             'line-style': 'data(style)',
             opacity: 'data(opacity)',
             'curve-style': 'bezier',
             'target-arrow-shape': 'triangle',
             'target-arrow-color': 'data(colour)',
-            'arrow-scale': 0.7,
+            'arrow-scale': 0.65,
           },
         },
       ] as unknown) as cytoscape.StylesheetStyle[],
-      layout: { name: 'cose-bilkent', animate: false, randomize: true,
-                idealEdgeLength: 90, nodeRepulsion: 6000 } as never,
+      // cose-bilkent understands compound nodes: it keeps each subject's
+      // concepts together instead of scattering them through everyone else's.
+      layout: {
+        name: 'cose-bilkent',
+        animate: false,
+        randomize: true,
+        idealEdgeLength: 70,
+        nodeRepulsion: 8000,
+        gravityRangeCompound: 1.4,
+        gravityCompound: 1.2,
+        tile: true,
+        padding: 24,
+        fit: true,
+      } as never,
       minZoom: 0.2,
       maxZoom: 3,
+      wheelSensitivity: 0.25,
     })
 
     cy.current.on('tap', 'node', (event) => onSelect(event.target.data('raw')))
     cy.current.on('dbltap', 'node', (event) => onExpand(event.target.data('raw')))
 
-    return () => { cy.current?.destroy(); cy.current = null }
+    // Centre what there is. The layout runs before the container has its
+    // final size, so fitting only at layout time leaves the graph parked in
+    // a corner of a much larger canvas.
+    const fit = () => {
+      if (!cy.current || cy.current.nodes().length === 0) return
+      cy.current.resize()
+      cy.current.fit(undefined, 40)
+      // Never blow two nodes up to fill a wall.
+      if (cy.current.zoom() > 1.4) {
+        cy.current.zoom({ level: 1.4, position: { x: 0, y: 0 } })
+        cy.current.center()
+      }
+    }
+    const frame = requestAnimationFrame(fit)
+    const observer = new ResizeObserver(fit)
+    observer.observe(box.current)
+
+    return () => {
+      cancelAnimationFrame(frame)
+      observer.disconnect()
+      cy.current?.destroy()
+      cy.current = null
+    }
   }, [elements, onSelect, onExpand])
 
   return (

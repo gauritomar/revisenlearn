@@ -201,6 +201,13 @@ def build_graph(
             "importance": concept.importance or 3.0,
             "difficulty": concept.difficulty,
             "subject": subjects[concept.subject_id].name if concept.subject_id in subjects else None,
+            # Ids as well as names: the graph groups concepts into their
+            # subject and topic, and two topics can share a name across
+            # subjects.
+            "subject_id": concept.subject_id,
+            "subject_colour": (subjects[concept.subject_id].colour
+                               if concept.subject_id in subjects else None),
+            "topic_id": concept.topic_id,
             "topic": topics[concept.topic_id].name if concept.topic_id in topics else None,
             "subtopic": subtopics[concept.subtopic_id].name if concept.subtopic_id in subtopics else None,
             "dimmed": bool(job_id is not None and concept.id not in touched_by_job),

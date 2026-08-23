@@ -101,7 +101,9 @@ export function App() {
   // the editor stays the dominant element and the page never scrolls sideways.
   // Consolidated addendum §6: overlay-style, and only one open at a time.
   const showLeft = !leftCollapsed && !narrow
-  const showRight = !rightCollapsed && !narrow
+  // The right panel is about the open note. Screens that are not a note —
+  // the graph console, which has its own inspector — should not carry it.
+  const showRight = !rightCollapsed && !narrow && view !== 'Graph'
 
   // Choosing a tab closes whatever note or resource is open — otherwise the
   // open surface keeps winning and the tab appears to do nothing.
