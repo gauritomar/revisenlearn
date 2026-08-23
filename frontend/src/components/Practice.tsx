@@ -1,7 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
 
-import { api, type PracticeFeedback, type PracticeQuestion, type PracticeSummary } from '../lib/api'
+import {
+  api,
+  type PracticeFeedback,
+  type PracticeQuestion,
+  type PracticeSummary,
+  type StudySet,
+} from '../lib/api'
+import { useRefreshEverything } from '../lib/refresh'
+import { StudySets } from './StudySets'
+import { Spinner } from './Waiting'
 import { useUI } from '../store/ui'
 
 /** Quick Practice (spec §9.1 **[LOCKED]**).
@@ -82,6 +91,18 @@ function Picker({ onStart }: { onStart: (sessionId: number) => void }) {
     onSuccess: (row) => onStart(row.id),
   })
 
+  // A set is one place in the tree — "otherwise I don't know what I'm in for".
+  const [startingSet, setStartingSet] = useState<number | null>(null)
+  const startSet = useMutation({
+    mutationFn: (set: StudySet) => {
+      setStartingSet(set.id)
+      return api.startPractice(Math.min(20, Math.max(5, set.mcqs_available)),
+                               { concept_ids: set.concept_ids })
+    },
+    onSuccess: (row) => onStart(row.id),
+    onSettled: () => setStartingSet(null),
+  })
+
   const pool = available?.active_mcqs ?? 0
 
   return (
@@ -91,6 +112,23 @@ function Picker({ onStart }: { onStart: (sessionId: number) => void }) {
         Multiple choice, for volume and warm-up. Results feed your practice
         statistics — they never move a review date.
       </p>
+
+      <section className="mt-5">
+        <h3 className="text-[0.6875rem] font-semibold uppercase tracking-[0.09em] text-muted">
+          Ready sets
+        </h3>
+        <p className="mt-1 text-[0.75rem] text-faint">
+          One per lesson or subtopic, most recently written first.
+        </p>
+        <StudySets kind="practice" onPick={(set) => startSet.mutate(set)}
+                   busyFor={startingSet} />
+      </section>
+
+      <NeedsQuestions />
+
+      <h3 className="mt-6 text-[0.6875rem] font-semibold uppercase tracking-[0.09em] text-muted">
+        Or everything at once
+      </h3>
 
       {pool === 0 ? (
         <p data-testid="practice-empty" className="mt-5 rounded-lg border border-dashed border-line bg-surface p-8 text-center text-[0.875rem] text-faint">
@@ -144,9 +182,10 @@ function Picker({ onStart }: { onStart: (sessionId: number) => void }) {
             onClick={() => start.mutate()}
             disabled={start.isPending}
             data-testid="start-practice"
-            className="mt-5 rounded-md bg-accent px-4 py-2 text-[0.875rem] font-medium text-white transition hover:bg-accent-deep disabled:opacity-50"
+            className="mt-5 flex items-center gap-2 rounded-md bg-accent px-4 py-2 text-[0.875rem] font-medium text-white transition hover:bg-accent-deep disabled:opacity-50"
           >
-            {start.isPending ? 'Starting…' : `Practise ${count}`}
+            {start.isPending && <Spinner className="text-white" />}
+            {start.isPending ? 'Building the set…' : `Practise ${count}`}
           </button>
 
           {start.isError && (
@@ -389,5 +428,74 @@ function Stat({ label, value }: { label: string; value: React.ReactNode }) {
       <div className="text-xl font-semibold tabular-nums text-ink">{value}</div>
       <div className="mt-0.5 text-[0.6875rem] text-muted">{label}</div>
     </div>
+  )
+}
+
+
+/** Places you have written about that have no questions yet.
+ *
+ *  "I should be able to generate a test directly from my notes." Writing them
+ *  is a model call, so it is a button with the cost on it — principle §1.3
+ *  [LOCKED]: the system never silently spends money.
+ */
+function NeedsQuestions() {
+  const { data } = useQuery({
+    queryKey: ['practice-sets'],
+    queryFn: async () => (await api.practiceSets()).needs_generation,
+  })
+  const refresh = useRefreshEverything()
+  const [working, setWorking] = useState<number | null>(null)
+
+  const generate = useMutation({
+    mutationFn: (set: StudySet) => {
+      setWorking(set.id)
+      return api.generateQuestions(set.concept_ids)
+    },
+    onSuccess: refresh,
+    onSettled: () => setWorking(null),
+  })
+
+  const pending = data ?? []
+  if (pending.length === 0) return null
+
+  return (
+    <section className="mt-6">
+      <h3 className="text-[0.6875rem] font-semibold uppercase tracking-[0.09em] text-muted">
+        Written about, no questions yet
+      </h3>
+      <p className="mt-1 text-[0.75rem] text-faint">
+        Writing questions for one of these is a model call, so it happens only
+        when you ask.
+      </p>
+      <ul className="mt-2 space-y-1.5" data-testid="needs-questions">
+        {pending.map((set) => (
+          <li
+            key={`${set.kind}-${set.id}`}
+            className="flex flex-wrap items-center gap-2 rounded-lg border border-line bg-surface p-3"
+          >
+            <span className="text-[0.875rem] text-ink">{set.name}</span>
+            {set.path && <span className="text-[0.6875rem] text-faint">{set.path}</span>}
+            <span className="text-[0.75rem] text-muted">
+              {set.concept_count} concept{set.concept_count === 1 ? '' : 's'}
+            </span>
+            <button
+              type="button"
+              onClick={() => generate.mutate(set)}
+              disabled={working !== null}
+              data-testid={`generate-${set.kind}-${set.id}`}
+              className="ml-auto flex items-center gap-2 rounded-md border border-accent px-2.5 py-1 text-[0.75rem] text-accent-deep transition hover:bg-accent-wash disabled:opacity-50"
+            >
+              {working === set.id && <Spinner />}
+              {working === set.id ? 'Writing questions…' : 'Generate a test'}
+            </button>
+          </li>
+        ))}
+      </ul>
+      {generate.isError && (
+        <p data-testid="generate-error" className="mt-2 text-[0.8125rem] text-stale">
+          {(generate.error as Error).message.slice(0, 200)}
+        </p>
+      )}
+    </section>
   )
 }

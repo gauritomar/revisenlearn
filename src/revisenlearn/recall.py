@@ -88,6 +88,143 @@ def studied_on(session: Session) -> dict[int, date]:
     return out
 
 
+def placement_of(session: Session) -> dict[int, dict]:
+    """concept id -> the innermost page its evidence was written on.
+
+    A concept belongs where it was written: a lesson if the note has one, its
+    subtopic otherwise, its topic failing that. This is what lets Practice and
+    Revision be offered per subtopic — "otherwise I don't know what I'm in
+    for" — rather than as one undifferentiated pool.
+    """
+    from .models import Lesson, Subtopic, Topic
+
+    out: dict[int, dict] = {}
+    sources = session.exec(
+        select(ConceptSource).where(ConceptSource.invalidated_at.is_(None))
+    ).all()
+    if not sources:
+        return out
+
+    blocks = {
+        b.id: b for b in session.exec(
+            select(NoteBlock).where(
+                NoteBlock.id.in_({s.note_block_id for s in sources}))
+        ).all()
+    }
+    notes = {
+        n.id: n for n in session.exec(
+            select(Note).where(Note.id.in_({b.note_id for b in blocks.values()}))
+        ).all()
+    }
+    lessons = {l.id: l for l in session.exec(select(Lesson)).all()}
+    subtopics = {s.id: s for s in session.exec(select(Subtopic)).all()}
+    topics = {t.id: t for t in session.exec(select(Topic)).all()}
+
+    for source in sources:
+        if source.concept_id in out:
+            continue
+        block = blocks.get(source.note_block_id)
+        note = notes.get(block.note_id) if block else None
+        if note is None:
+            continue
+
+        if note.lesson_id and note.lesson_id in lessons:
+            lesson = lessons[note.lesson_id]
+            parent = (subtopics.get(lesson.subtopic_id).name
+                      if lesson.subtopic_id in subtopics else None)
+            topic = topics.get(lesson.topic_id)
+            out[source.concept_id] = {
+                "kind": "lesson", "id": lesson.id, "name": lesson.name,
+                "path": " › ".join(x for x in
+                                   [topic.name if topic else None, parent] if x),
+            }
+        elif note.subtopic_id and note.subtopic_id in subtopics:
+            subtopic = subtopics[note.subtopic_id]
+            topic = topics.get(subtopic.topic_id)
+            out[source.concept_id] = {
+                "kind": "subtopic", "id": subtopic.id, "name": subtopic.name,
+                "path": topic.name if topic else "",
+            }
+        elif note.topic_id and note.topic_id in topics:
+            topic = topics[note.topic_id]
+            out[source.concept_id] = {
+                "kind": "topic", "id": topic.id, "name": topic.name, "path": "",
+            }
+    return out
+
+
+def study_areas(session: Session, now: datetime | None = None) -> list[dict]:
+    """Everything you could sit down and practise, one row per place.
+
+    Ordered by what you wrote most recently, because that is the thing you
+    were just doing and the thing most worth consolidating.
+    """
+    now = now or _now()
+    today = now.astimezone().date()
+
+    placement = placement_of(session)
+    if not placement:
+        return []
+
+    studied = studied_on(session)
+    progress = mcq_progress(session, set(placement))
+    items = {i.concept_id: i for i in session.exec(
+        select(ReviewItem).where(ReviewItem.suspended.is_(False))
+    ).all()}
+    names = {
+        c.id: c.canonical_name for c in session.exec(
+            select(Concept).where(Concept.id.in_(set(placement)),
+                                  Concept.deleted_at.is_(None))
+        ).all()
+    }
+
+    grouped: dict[tuple[str, int], dict] = {}
+    for concept_id, where in placement.items():
+        if concept_id not in names:
+            continue
+        key = (where["kind"], where["id"])
+        area = grouped.setdefault(key, {
+            "kind": where["kind"], "id": where["id"], "name": where["name"],
+            "path": where["path"], "concept_ids": [], "concepts": [],
+            "mcqs_available": 0, "due_count": 0, "answered": 0, "correct": 0,
+            "last_studied": None,
+        })
+        stats = progress.get(concept_id, {})
+        area["concept_ids"].append(concept_id)
+        area["concepts"].append({"id": concept_id, "name": names[concept_id],
+                                 **stats})
+        area["mcqs_available"] += stats.get("mcqs_available", 0)
+        area["answered"] += stats.get("answered", 0)
+        area["correct"] += stats.get("correct", 0)
+
+        item = items.get(concept_id)
+        if item is not None:
+            due = _local_day(item.due_at)
+            if due is None or due <= today:
+                area["due_count"] += 1
+
+        day = studied.get(concept_id)
+        if day and (area["last_studied"] is None or day > area["last_studied"]):
+            area["last_studied"] = day
+
+    areas = []
+    for area in grouped.values():
+        area["concept_ids"].sort()
+        area["concepts"].sort(key=lambda c: c["name"])
+        area["concept_count"] = len(area["concept_ids"])
+        area["accuracy"] = (round(100 * area["correct"] / area["answered"])
+                            if area["answered"] else None)
+        area["days_ago"] = ((today - area["last_studied"]).days
+                            if area["last_studied"] else None)
+        area["last_studied"] = (area["last_studied"].isoformat()
+                                if area["last_studied"] else None)
+        areas.append(area)
+
+    # Most recently written first; anything undated last.
+    areas.sort(key=lambda a: (a["days_ago"] is None, a["days_ago"] or 0))
+    return areas
+
+
 def mcq_progress(session: Session, concept_ids: set[int]) -> dict[int, dict]:
     """Answered/correct per concept, so progress sits next to the work."""
     if not concept_ids:

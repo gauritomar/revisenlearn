@@ -427,12 +427,15 @@ def _record_misconceptions(session: DBSession, concept_id: int,
 # --------------------------------------------------------------------------
 
 def create_session(session: DBSession, count: int = DEFAULT_SESSION_SIZE,
-                   subject_ids: tuple[int, ...] = ()) -> SessionRow:
-    items = build_queue(session, count, subject_ids=subject_ids)
+                   subject_ids: tuple[int, ...] = (),
+                   concept_ids: tuple[int, ...] = ()) -> SessionRow:
+    items = build_queue(session, count, subject_ids=subject_ids,
+                        concept_ids=concept_ids)
 
     row = SessionRow(
         session_type="revision",
-        scope_json=json.dumps({"subject_ids": list(subject_ids)}),
+        scope_json=json.dumps({"subject_ids": list(subject_ids),
+                               "concept_ids": list(concept_ids)}),
         planned_count=len(items),
         started_at=_now(),
     )

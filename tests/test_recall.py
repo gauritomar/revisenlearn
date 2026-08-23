@@ -179,3 +179,129 @@ def test_a_practice_session_can_be_scoped_to_one_days_concepts(client) -> None:
     assert scoped.status_code in (201, 409)
     if scoped.status_code == 201:
         assert scoped.json()["planned_count"] == 0
+
+
+# --------------------------------------------------------------------------
+# Ready-made sets, one per place
+# --------------------------------------------------------------------------
+
+def _lesson_concept(session, name: str, lesson_name: str, day: dt.date):
+    """A concept written on a lesson's note, which is what places it."""
+    from revisenlearn.models import Lesson, Subtopic, Topic
+
+    subject = session.exec(select(Subject)).first()
+    if subject is None:
+        subject = Subject(name="DSA")
+        session.add(subject)
+        session.flush()
+    topic = session.exec(select(Topic)).first()
+    if topic is None:
+        topic = Topic(subject_id=subject.id, name="Codechef")
+        session.add(topic)
+        session.flush()
+    subtopic = session.exec(select(Subtopic)).first()
+    if subtopic is None:
+        subtopic = Subtopic(topic_id=topic.id, name="Strings")
+        session.add(subtopic)
+        session.flush()
+
+    lesson = session.exec(
+        select(Lesson).where(Lesson.name == lesson_name)
+    ).first()
+    if lesson is None:
+        lesson = Lesson(topic_id=topic.id, subtopic_id=subtopic.id,
+                        name=lesson_name)
+        session.add(lesson)
+        session.flush()
+
+    note = session.exec(select(Note).where(Note.lesson_id == lesson.id)).first()
+    if note is None:
+        note = Note(title=lesson_name, study_date=day, subject_id=subject.id,
+                    topic_id=topic.id, subtopic_id=subtopic.id,
+                    lesson_id=lesson.id)
+        session.add(note)
+        session.flush()
+
+    written = dt.datetime.combine(day, dt.time(9, 0), tzinfo=dt.timezone.utc)
+    block = NoteBlock(note_id=note.id, position=0, block_type="paragraph",
+                      text=f"{name} matters.", content_hash=name,
+                      created_at=written, updated_at=written)
+    session.add(block)
+    session.flush()
+
+    concept = Concept(canonical_name=name, normalised_name=name.lower(),
+                      subject_id=subject.id, topic_id=topic.id,
+                      subtopic_id=subtopic.id)
+    session.add(concept)
+    session.flush()
+    session.add(ConceptSource(concept_id=concept.id, note_block_id=block.id,
+                              note_id=note.id))
+    session.flush()
+    return concept
+
+
+def test_sets_are_grouped_by_the_page_the_work_was_written_on(session) -> None:
+    """"Let's create both MCQs and Revision sets subtopic wise because
+    otherwise I don't know what I'm in for.\""""
+    today = dt.date.today()
+    old = _lesson_concept(session, "Roman numerals", "Roman numerals",
+                          today - dt.timedelta(days=5))
+    recent = _lesson_concept(session, "Two pointers", "Two pointers", today)
+    _due(session, old, due_at=None)
+    _due(session, recent, due_at=None)
+
+    areas = recall.study_areas(session)
+
+    assert [a["name"] for a in areas] == ["Two pointers", "Roman numerals"]
+    assert all(a["kind"] == "lesson" for a in areas)
+    assert areas[0]["path"] == "Codechef › Strings"
+    assert [a["days_ago"] for a in areas] == [0, 5]
+
+
+def test_a_set_carries_its_questions_and_its_score(session) -> None:
+    today = dt.date.today()
+    concept = _lesson_concept(session, "Binary search", "Binary search", today)
+    _due(session, concept, due_at=None)
+    for i in range(2):
+        mcq = MCQ(concept_id=concept.id, dimension="recall", stem=f"Q{i}",
+                  options_json="[]", correct_option_id="a", status="active",
+                  prompt_version="v1")
+        session.add(mcq)
+        session.flush()
+        session.add(MCQAttempt(mcq_id=mcq.id, concept_id=concept.id,
+                               selected_option_id="a", is_correct=i == 0))
+    session.flush()
+
+    area = recall.study_areas(session)[0]
+
+    assert area["mcqs_available"] == 2
+    assert (area["answered"], area["correct"], area["accuracy"]) == (2, 1, 50)
+    assert area["due_count"] == 1
+
+
+def test_a_revision_session_can_be_scoped_to_one_set(session) -> None:
+    """"On the Revision panel also I should have topic-wise / subtopic
+    revision ready." """
+    from revisenlearn import revision
+
+    today = dt.date.today()
+    wanted = _lesson_concept(session, "Tries", "Tries", today)
+    other = _lesson_concept(session, "Heaps", "Heaps", today)
+    _due(session, wanted, due_at=None)
+    _due(session, other, due_at=None)
+
+    row = revision.create_session(session, count=10,
+                                  concept_ids=(wanted.id,))
+
+    from revisenlearn.models import ReviewItem as RI, SessionItem
+
+    items = session.exec(
+        select(SessionItem).where(SessionItem.session_id == row.id)
+    ).all()
+    assert row.planned_count == 1
+    # A session item points at the review item; that is what carries the
+    # concept.
+    concepts = {
+        session.get(RI, i.review_item_id).concept_id for i in items
+    }
+    assert concepts == {wanted.id}

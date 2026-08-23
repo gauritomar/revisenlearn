@@ -751,7 +751,7 @@ export function Todos() {
   const allSelected = entries.length > 0 && entries.every((e) => selected.has(keyOf(e)))
   const someSelected = selected.size > 0
   const selectedTodoIds = entries
-    .filter((e) => e.kind === 'todo' && selected.has(keyOf(e)))
+    .filter((e) => selected.has(keyOf(e)))
     .map((e) => e.id)
 
   /** Bulk toggles run one after another rather than all at once: SQLite has a
@@ -761,10 +761,7 @@ export function Todos() {
     mutationFn: async (done: boolean) => {
       for (const entry of entries) {
         if (!selected.has(keyOf(entry)) || entry.done === done) continue
-        if (entry.kind === 'todo') await api.updateTodo(entry.id, { done })
-        else if (entry.kind === 'lesson') {
-          await api.updateLesson(entry.id, { status: done ? 'done' : 'not_started' })
-        } else await api.toggleChecklistItem(entry.id, done)
+        await api.updateTodo(entry.id, { done })
       }
     },
     onSuccess: async () => { stopSelecting(); await refresh() },
@@ -778,19 +775,10 @@ export function Todos() {
   })
 
   const toggle = useMutation({
-    mutationFn: (entry: { kind: string; id: number; done: boolean; lesson_id: number | null }) => {
-      if (entry.kind === 'todo') {
-        return api.updateTodo(entry.id, { done: !entry.done })
-      }
-      if (entry.kind === 'lesson') {
-        return api.updateLesson(entry.id, {
-          status: entry.done ? 'not_started' : 'done',
-        })
-      }
-      // A checklist entry is a note block behind the scenes (§2), so the
-      // toggle goes through the projection's write-through endpoint.
-      return api.toggleChecklistItem(entry.id, !entry.done)
-    },
+    // Only the user's own todos live here now, so there is one thing a tick
+    // can mean. Lessons and checklist items are managed where they live.
+    mutationFn: (entry: { id: number; done: boolean }) =>
+      api.updateTodo(entry.id, { done: !entry.done }),
     onSuccess: async () => {
       await qc.invalidateQueries({ queryKey: ['todo-board'] })
       await qc.invalidateQueries({ queryKey: ['roadmap'] })
@@ -801,7 +789,8 @@ export function Todos() {
     <div data-testid="todos" className="mx-auto w-full max-w-3xl px-4 py-6 sm:px-6">
       <h2 className="text-xl font-semibold tracking-tight text-ink">Todos</h2>
       <p className="mt-1 text-[0.875rem] leading-relaxed text-muted">
-        Everything still open, across every subject.
+        Your own list. Lessons live in the Roadmap; nothing here is written
+        by the app.
       </p>
 
       <form
@@ -911,9 +900,6 @@ export function Todos() {
                 >
                   Mark open
                 </button>
-                {/* Only standalone todos can be deleted from here: a lesson or
-                    a checklist item on this board is a view of something that
-                    lives elsewhere. */}
                 <button
                   type="button"
                   disabled={selectedTodoIds.length === 0}
@@ -989,21 +975,8 @@ export function Todos() {
               <span className={`min-w-0 flex-1 truncate text-[0.8125rem] ${entry.done ? 'text-faint line-through' : 'text-ink'}`}>
                 {entry.title}
               </span>
-              {entry.context && (
-                <span className="hidden shrink-0 text-[0.6875rem] text-faint sm:inline">
-                  {entry.context}
-                </span>
-              )}
-              <span className="shrink-0 rounded bg-sunken px-1.5 py-0.5 text-[0.625rem] uppercase tracking-wide text-muted">
-                {entry.kind === 'lesson_item' ? 'item' : entry.kind}
-              </span>
-              {/* A standalone todo is the user's own line, so it can be
-                  removed. A lesson or a checklist item is a view of something
-                  that lives elsewhere; deleting it here would be deleting the
-                  lesson, or the line in a note, from the wrong place. */}
-              {entry.kind === 'todo' && !selecting && (
-                <DeleteTodo id={entry.id} title={entry.title} />
-              )}
+              {/* Every row is the user's own todo, so every row can go. */}
+              {!selecting && <DeleteTodo id={entry.id} title={entry.title} />}
               {entry.due_date && (
                 <span className="shrink-0 text-[0.6875rem] tabular-nums text-muted">
                   {entry.due_date}

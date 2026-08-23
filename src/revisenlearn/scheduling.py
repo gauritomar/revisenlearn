@@ -402,8 +402,15 @@ def due_items(session: Session, now: datetime | None = None,
 
 
 def build_queue(session: Session, count: int, now: datetime | None = None,
-                subject_ids: tuple[int, ...] = ()) -> list[ReviewItem]:
-    """Spec §9.2 — due and overdue first by §10.4 priority, then new."""
+                subject_ids: tuple[int, ...] = (),
+                concept_ids: tuple[int, ...] = ()) -> list[ReviewItem]:
+    """Spec §9.2 — due and overdue first by §10.4 priority, then new.
+
+    `concept_ids` narrows the queue to one place in the tree: "on the Revision
+    panel also I should have topic-wise / subtopic revision ready." The
+    ordering within it is unchanged — priority still decides what comes first,
+    it just has a smaller pool to choose from.
+    """
     now = now or _now()
     weights = load_weights(session)
     interview_on = interview_mode_on(session)
@@ -412,6 +419,9 @@ def build_queue(session: Session, count: int, now: datetime | None = None,
     }
 
     items = due_items(session, now, subject_ids)
+    if concept_ids:
+        wanted = set(concept_ids)
+        items = [item for item in items if item.concept_id in wanted]
     scored = [
         (priority(session, item, concepts.get(item.concept_id), now,
                   weights, interview_on), item)

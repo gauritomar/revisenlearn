@@ -293,8 +293,10 @@ def test_the_roadmap_shows_completed_work(page_roadmap, roadmap_app) -> None:
 # §6 Todos view
 # --------------------------------------------------------------------------
 
-def test_todos_combines_standalone_todos_with_open_lessons(page_roadmap,
-                                                            roadmap_app) -> None:
+def test_todos_holds_only_the_users_own_list(page_roadmap, roadmap_app) -> None:
+    """"Keep to-dos as a completely separate functionality … that's for my own
+    viewing." Lessons are managed in the Roadmap, where one click means one
+    lesson and the whole curriculum is in view."""
     page = page_roadmap
     field = _lesson_field(page, roadmap_app)
     field.click()
@@ -307,12 +309,13 @@ def test_todos_combines_standalone_todos_with_open_lessons(page_roadmap,
 
     page.get_by_test_id("todo-input").fill("Redo resume")
     page.get_by_test_id("todo-add").click()
-    page.wait_for_timeout(400)
+    page.wait_for_function(
+        "() => document.body.innerText.includes('Redo resume')", timeout=10_000)
 
     entries = page.get_by_test_id("todo-entries").inner_text()
     assert "Redo resume" in entries
-    assert "An open lesson" in entries
-
+    assert "An open lesson" not in entries
+    assert page.locator('[data-testid^="entry-lesson-"]').count() == 0
 
 def test_hide_completed_is_on_by_default_and_toggles(page_roadmap,
                                                       roadmap_app) -> None:

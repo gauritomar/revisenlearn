@@ -452,3 +452,111 @@ def test_resources_is_a_page_you_write_on(page, app) -> None:
     )[0][0] == 1
     page.get_by_test_id("process-notes").wait_for(state="visible")
     assert page.get_by_test_id("process-notes").get_attribute("data-pending") == "0"
+
+
+def _seeded_concepts(app) -> None:
+    """Notes processed by the mock provider, so there are real sets to show."""
+    import time as _time
+
+    with httpx.Client(base_url=app.base_url, timeout=120) as c:
+        s = c.post("/api/subjects", json={"name": "DSA"}).json()
+        t = c.post("/api/topics", json={"subject_id": s["id"], "name": "Codechef"}).json()
+        st = c.post("/api/subtopics", json={"topic_id": t["id"], "name": "Strings"}).json()
+        lesson = c.post("/api/lessons", json={
+            "topic_id": t["id"], "subtopic_id": st["id"], "name": "Roman numerals",
+        }).json()
+        note = c.post("/api/notes/ensure", json={"lesson_id": lesson["id"]}).json()
+        c.put(f"/api/notes/{note['id']}/blocks", json={"blocks": [
+            {"id": None, "position": 0, "block_type": "bullet_list_item",
+             "text": "Subtract when a smaller numeral precedes a larger one."},
+        ]})
+        job = c.post("/api/pipeline/run", json={}).json()
+        for _ in range(120):
+            body = c.get(f"/api/pipeline/jobs/{job['id']}").json()
+            if body["job"]["status"] in ("succeeded", "failed"):
+                break
+            _time.sleep(0.5)
+        assert body["job"]["status"] == "succeeded", body["job"].get("error_text")
+
+
+@pytest.fixture
+def mock_app(db_path):
+    """An app whose model calls are the deterministic mock — no spend."""
+    from conftest import start_app
+
+    instance = start_app(db_path, extra_env={"RNL_LLM_PROVIDER": "mock"})
+    try:
+        yield instance
+    finally:
+        instance.stop()
+
+
+@pytest.fixture
+def mock_page(browser, mock_app):
+    from conftest import _open_page
+
+    yield from _open_page(browser, mock_app)
+
+
+def test_practice_offers_a_set_per_place_studied(mock_page, mock_app) -> None:
+    """"On the MCQ page I should have some tests ready based on the
+    topics/subtopics/lessons I've already done … based on my recency of
+    notes.\""""
+    _seeded_concepts(mock_app)
+    page = mock_page
+    page.reload(wait_until="networkidle")
+    page.get_by_test_id("nav-practice").click()
+
+    sets = page.get_by_test_id("practice-sets")
+    sets.wait_for(state="visible", timeout=20_000)
+    text = sets.inner_text()
+    assert "Roman numerals" in text
+    assert "Codechef › Strings" in text          # where it sits
+    assert "written today" in text               # recency
+
+    # Starting one runs only that set's questions.
+    page.locator('[data-testid^="set-lesson-"]').first.click()
+    page.get_by_test_id("practice-runner").wait_for(state="visible", timeout=20_000)
+    concept = page.get_by_test_id("practice-concept").inner_text()
+    assert concept
+
+
+def test_revision_offers_the_same_places(mock_page, mock_app) -> None:
+    """"On the Revision panel also I should have topic-wise / subtopic
+    revision ready." And the wait for a generated question is visible."""
+    _seeded_concepts(mock_app)
+    page = mock_page
+    page.reload(wait_until="networkidle")
+    page.get_by_test_id("nav-revision").click()
+
+    sets = page.get_by_test_id("revision-sets")
+    sets.wait_for(state="visible", timeout=20_000)
+    assert "Roman numerals" in sets.inner_text()
+
+    page.locator('[data-testid^="set-lesson-"]').first.click()
+    # A model call is in flight, and says so.
+    page.get_by_test_id("waiting").wait_for(state="visible", timeout=10_000)
+    page.get_by_test_id("revision-runner").wait_for(state="visible", timeout=30_000)
+
+
+def test_the_two_verdicts_are_told_apart_by_colour(mock_page, mock_app) -> None:
+    """"Add colour to the I got this to green and I didn't get it to red,
+    slightly colour only." §9.6 still forbids escalation, so it is a wash and
+    a border rather than a filled red button."""
+    _seeded_concepts(mock_app)
+    page = mock_page
+    page.reload(wait_until="networkidle")
+    page.get_by_test_id("nav-revision").click()
+    page.get_by_test_id("revision-sets").wait_for(state="visible", timeout=20_000)
+    page.locator('[data-testid^="set-lesson-"]').first.click()
+    page.get_by_test_id("revision-runner").wait_for(state="visible", timeout=30_000)
+
+    page.get_by_test_id("revision-answer").fill("Compare each numeral with the next one.")
+    page.get_by_test_id("revision-submit").click()
+    page.get_by_test_id("override-got-it").wait_for(state="visible", timeout=30_000)
+
+    got = page.get_by_test_id("override-got-it").evaluate(
+        "el => getComputedStyle(el).color")
+    wrong = page.get_by_test_id("override-wrong").evaluate(
+        "el => getComputedStyle(el).color")
+    assert got != wrong

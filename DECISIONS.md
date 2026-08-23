@@ -953,7 +953,62 @@ selection box, with the bulk actions above it. Never two at once.
 
 ---
 
-## 15. What is not built
+## 15. The board that lied
+
+### Todos hold only the user's todos
+
+Addendum §6 had the Todos board combine "standalone Todos and any open
+Lesson/Item across every subject". In use that was wrong twice over.
+
+The user had said, a round earlier, "keep to-dos as a completely separate
+functionality where I can [put] things according to my own need, that's for my
+own viewing" — and I kept the lessons anyway, because the addendum said so.
+Then two bugs arrived that were really the same bug:
+
+  * *"The delete functionality on todos is still not working."* It worked. The
+    first rows on their board were **lessons**, which have no delete, because
+    deleting a lesson from a view of it is the wrong place to do it. So the
+    board's most prominent rows silently lacked the control the rest had.
+  * *"It's auto checking everything in DSA Codechef on starting."* Nothing was
+    automatic: one press of Select all → Mark done had marked twenty-one
+    lessons complete, because the board's bulk actions reached things the
+    board did not own.
+
+A lesson's status belongs to the Roadmap, where the whole curriculum is in
+view and one click means one lesson. The board is a list you own, and every
+row on it can be ticked, selected and deleted the same way. Their twenty-one
+lessons were reset to `not_started`; the three marked `revisit` were left
+alone, being the ones actually in progress.
+
+The general shape: a list that mixes things you own with views of things you
+do not will always have rows where half the controls are missing, and no
+amount of per-row special-casing fixes the confusion of it.
+
+### Sets are places, not pools
+
+"Let's create both MCQs and Revision sets subtopic wise because otherwise I
+don't know what I'm in for." A single pool of questions across everything is
+unjudgeable: you cannot tell before starting whether it will ask about strings
+or statistics. `concept_sources` already knows which note block a concept came
+from, so it knows which lesson or subtopic that note belongs to — the same
+join the calendar uses. Both screens now offer one set per place, ordered by
+what was written most recently, with its question count and your score on it.
+
+Generating questions for a place that has none is a button with the cost on
+it, never a side effect: §1.3 **[LOCKED]** — "the system never silently spends
+money".
+
+### A wait has to look like work
+
+Generation and marking take seconds. A screen that sits there is
+indistinguishable from one that has failed, so calls in flight now say what
+they are doing and keep moving. The two verdict buttons are tinted green and
+red — enough to tell them apart at a glance, and no more: §9.6 forbids
+escalation, so it is a wash and a border rather than a filled red button.
+
+---
+
+## 16. What is not built
 
 Honest list, so nothing here is a surprise.
 

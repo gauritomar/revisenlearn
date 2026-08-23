@@ -17,6 +17,9 @@ class SessionCreate(BaseModel):
     #: consolidated addendum §8 finally wires up.
     count: int | None = Field(default=None, ge=1, le=100)
     subject_ids: list[int] | None = None
+    #: One place in the tree — a subtopic's concepts, say — so revision can be
+    #: "the thing I studied", not "whatever is due everywhere".
+    concept_ids: list[int] | None = None
 
 
 class AnswerIn(BaseModel):
@@ -63,12 +66,26 @@ def dashboard(session: Session = Depends(get_session)) -> dict:
     return data
 
 
+@router.get("/revision/sets")
+def revision_sets(session: Session = Depends(get_session)) -> dict:
+    """The same places, for prose revision: what is due, where.
+
+    "On the Revision panel also I should have topic-wise / subtopic revision
+    ready."
+    """
+    from ..recall import study_areas
+
+    areas = study_areas(session)
+    return {"sets": [a for a in areas if a["concept_count"] > 0]}
+
+
 @router.post("/revision/session", status_code=201)
 def create(payload: SessionCreate,
            session: Session = Depends(get_session)) -> dict:
     count = payload.count or _default_count(session)
     row = revision.create_session(
-        session, count, tuple(payload.subject_ids or ())
+        session, count, tuple(payload.subject_ids or ()),
+        tuple(payload.concept_ids or ()),
     )
     if row.planned_count == 0:
         raise HTTPException(409, "Nothing is due yet")

@@ -349,7 +349,13 @@ def test_the_roadmap_carries_no_mastery_vocabulary(session) -> None:
 # §6 Todos board
 # --------------------------------------------------------------------------
 
-def test_the_board_combines_todos_lessons_and_items(session) -> None:
+def test_the_board_holds_only_the_users_own_todos(session) -> None:
+    """Addendum §6 had this board combine todos, lessons and checklist items.
+    In use that was wrong: "keep to-dos as a completely separate functionality
+    … that's for my own viewing", and mixing them made the board lie — its
+    rows were mostly lessons, which have no delete, and one Select all → Mark
+    done marked twenty-one lessons complete. A lesson's status belongs to the
+    Roadmap."""
     tree = _tree(session)
     lesson = _lesson(session, tree, "Window functions")
     _items(session, lesson, [False])
@@ -358,10 +364,8 @@ def test_the_board_combines_todos_lessons_and_items(session) -> None:
 
     board = roadmap.todo_board(session)
 
-    kinds = {e["kind"] for e in board["entries"]}
-    assert kinds == {"todo", "lesson", "lesson_item"}
-    titles = {e["title"] for e in board["entries"]}
-    assert {"Redo resume", "Window functions", "Item 0"} <= titles
+    assert {e["kind"] for e in board["entries"]} == {"todo"}
+    assert [e["title"] for e in board["entries"]] == ["Redo resume"]
 
 
 def test_the_board_hides_completed_by_default(session) -> None:
@@ -379,9 +383,9 @@ def test_the_board_hides_completed_by_default(session) -> None:
     assert hidden["hide_completed"] is True
 
     shown = roadmap.todo_board(session, hide_completed=False)
-    assert {"Finished", "Already done", "Still open"} <= {
-        e["title"] for e in shown["entries"]
-    }
+    assert {"Already done", "Still open"} <= {e["title"] for e in shown["entries"]}
+    # The finished *lesson* is not here at all: lessons live in the Roadmap.
+    assert "Finished" not in {e["title"] for e in shown["entries"]}
 
 
 def test_the_board_sorts_nearest_due_date_first(session) -> None:

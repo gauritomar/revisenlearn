@@ -171,9 +171,16 @@ to come back to — the same keys as any other note, and nothing else. It is
 never sent to the model and never counts as a day's study: a reading list is
 not something to be examined on.
 
-**Todos** is yours alone. One checkbox per row, which ticks a todo off; press
-**Select** when you want to act on several at once, and the row's checkbox
-becomes a selection box with Mark done, Mark open and Delete above it.
+**Todos** is yours alone — only what you put there, never a lesson or a
+checklist item. One checkbox per row, which ticks a todo off; press **Select**
+when you want to act on several at once, and the row's checkbox becomes a
+selection box with Mark done, Mark open and Delete above it.
+
+**Practice** and **Revision** both open with a set per place you have studied —
+lesson or subtopic, most recently written first, with its question count and
+your score on it. Somewhere you have written about but never generated
+questions for gets a *Generate a test* button, which is a model call and says
+so.
 
 The **Dashboard** opens with the calendar, and under it *Revise today*: what
 is due, grouped by the day you wrote it ("studied 3 days ago"), with that

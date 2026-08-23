@@ -61,6 +61,58 @@ def defaults(session: Session = Depends(get_session)) -> dict:
     return {"default": preset, "options": options}
 
 
+@router.get("/practice/sets")
+def practice_sets(session: Session = Depends(get_session)) -> dict:
+    """Ready-made sets, one per place you have studied.
+
+    "On the MCQ page I should have some tests ready based on the
+    topics/subtopics/lessons I've already done … based on my recency of
+    notes." Most recent first: that is the material you were just in.
+    """
+    from ..recall import study_areas
+
+    areas = study_areas(session)
+    return {
+        "sets": [a for a in areas if a["mcqs_available"] > 0],
+        # Places with concepts but no questions yet — generating for one of
+        # these is a model call, so it is offered, never taken.
+        "needs_generation": [a for a in areas if a["mcqs_available"] == 0],
+    }
+
+
+class GenerateIn(BaseModel):
+    """Concepts to write questions for. Explicit: this spends money."""
+
+    concept_ids: list[int] = Field(min_length=1, max_length=12)
+
+
+@router.post("/practice/generate")
+def generate_questions(payload: GenerateIn,
+                       session: Session = Depends(get_session)) -> dict:
+    """Write questions for a place that has none yet.
+
+    "I should be able to generate a test directly from my notes." Principle
+    §1.3 **[LOCKED]** — "nothing is automatic. The user presses a button …
+    the system never silently spends money" — so this is a button, it is
+    capped, and it only writes for concepts whose pool is empty.
+    """
+    from ..models import Concept
+    from ..pipeline import mcqs
+
+    made = 0
+    touched: list[str] = []
+    for concept_id in payload.concept_ids:
+        concept = session.get(Concept, concept_id)
+        if concept is None or concept.deleted_at is not None:
+            continue
+        if not mcqs.needs_regeneration(session, concept_id):
+            continue
+        made += mcqs.generate_for_concept(session, concept)
+        touched.append(concept.canonical_name)
+
+    return {"generated": made, "concepts": touched}
+
+
 @router.get("/practice/available")
 def available(session: Session = Depends(get_session)) -> dict:
     """How much there is to practise, so the picker can be honest about it."""

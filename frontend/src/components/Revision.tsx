@@ -1,11 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
 
+import { StudySets } from './StudySets'
+import { Spinner, Waiting } from './Waiting'
 import {
   api,
   type ProseFeedback,
   type ProseQuestion,
   type RevisionSummary,
+  type StudySet,
 } from '../lib/api'
 
 /** Revision — the prose loop (spec §9.2–§9.6 **[LOCKED]**).
@@ -70,6 +73,19 @@ function Dashboard({ onStart }: { onStart: (id: number) => void }) {
     onSuccess: (row) => onStart(row.id),
   })
 
+  // "On the Revision panel also I should have topic-wise / subtopic revision
+  // ready." Same places as Practice, scoped the same way.
+  const [startingSet, setStartingSet] = useState<number | null>(null)
+  const startSet = useMutation({
+    mutationFn: (set: StudySet) => {
+      setStartingSet(set.id)
+      return api.startRevision(Math.min(10, Math.max(1, set.due_count)),
+                               set.concept_ids)
+    },
+    onSuccess: (row) => onStart(row.id),
+    onSettled: () => setStartingSet(null),
+  })
+
   const due = data?.due_count ?? 0
 
   return (
@@ -87,6 +103,17 @@ function Dashboard({ onStart }: { onStart: (id: number) => void }) {
         <Stat label="Reviews logged" value={data?.reviews_logged ?? 0} />
       </div>
 
+      <section className="mt-5">
+        <h3 className="text-[0.6875rem] font-semibold uppercase tracking-[0.09em] text-muted">
+          By subtopic
+        </h3>
+        <p className="mt-1 text-[0.75rem] text-faint">
+          Revise one place at a time, most recently written first.
+        </p>
+        <StudySets kind="revision" onPick={(set) => startSet.mutate(set)}
+                   busyFor={startingSet} />
+      </section>
+
       {due === 0 ? (
         <p data-testid="revision-empty" className="mt-5 rounded-lg border border-dashed border-line bg-surface p-8 text-center text-[0.875rem] text-faint">
           Nothing is ready yet. Concepts become reviewable once you have
@@ -94,6 +121,9 @@ function Dashboard({ onStart }: { onStart: (id: number) => void }) {
         </p>
       ) : (
         <>
+          <h3 className="mt-6 text-[0.6875rem] font-semibold uppercase tracking-[0.09em] text-muted">
+            Or everything due
+          </h3>
           <div className="mt-5 flex flex-wrap items-center gap-2">
             {[5, 10, 20].map((n) => (
               <button
@@ -130,9 +160,10 @@ function Dashboard({ onStart }: { onStart: (id: number) => void }) {
             onClick={() => start.mutate()}
             disabled={start.isPending}
             data-testid="start-revision"
-            className="mt-5 rounded-md bg-accent px-4 py-2 text-[0.875rem] font-medium text-white transition hover:bg-accent-deep disabled:opacity-50"
+            className="mt-5 flex items-center gap-2 rounded-md bg-accent px-4 py-2 text-[0.875rem] font-medium text-white transition hover:bg-accent-deep disabled:opacity-50"
           >
-            {start.isPending ? 'Starting…' : `Review ${count}`}
+            {start.isPending && <Spinner className="text-white" />}
+            {start.isPending ? 'Building the session…' : `Review ${count}`}
           </button>
           <p className="mt-2 text-[0.75rem] text-faint">
             Five is a real session. Stopping after one is a real session too.
@@ -270,7 +301,12 @@ function Runner({ sessionId, onFinish }: {
   }
 
   if (!question) {
-    return <div className="p-6 text-[0.8125rem] text-faint">Writing a question…</div>
+    return (
+      <Waiting
+        what="Writing a question…"
+        hint="Prose questions are generated fresh each time (§16), so this is a model call."
+      />
+    )
   }
 
   return (
@@ -313,10 +349,13 @@ function Runner({ sessionId, onFinish }: {
               onClick={() => void submit()}
               disabled={busy || !answer.trim()}
               data-testid="revision-submit"
-              className="rounded-md bg-accent px-4 py-2 text-[0.875rem] font-medium text-white transition hover:bg-accent-deep disabled:opacity-40"
+              className="flex items-center gap-2 rounded-md bg-accent px-4 py-2 text-[0.875rem] font-medium text-white transition hover:bg-accent-deep disabled:opacity-40"
             >
-              {busy ? 'Marking…' : 'Submit'}
-              <kbd className="ml-1.5 text-[0.6875rem] opacity-70">⌘↵</kbd>
+              {/* Marking is a model call reading the whole answer: several
+                  seconds, and the wait needs to look like work. */}
+              {busy && <Spinner className="text-white" />}
+              {busy ? 'Marking your answer…' : 'Submit'}
+              {!busy && <kbd className="ml-1.5 text-[0.6875rem] opacity-70">⌘↵</kbd>}
             </button>
             <button
               type="button"
@@ -411,25 +450,32 @@ function Feedback({ sessionId, feedback, onNext, onOverridden }: {
         </details>
       )}
 
-      {/* §9.4 — always present, both of them. */}
+      {/* §9.4 — always present, both of them. Tinted, lightly: the colour is
+          there to tell the two apart at a glance, not to grade the person.
+          §9.6 forbids escalation, so this is a wash and a border, never a
+          filled red button. */}
       <div className="flex flex-wrap items-center gap-2">
         <button
           type="button"
           onClick={() => override.mutate('got_it')}
           disabled={override.isPending || feedback.overridden}
           data-testid="override-got-it"
-          className="rounded-md border border-line bg-surface px-3 py-1.5 text-[0.8125rem] text-ink transition hover:border-accent disabled:opacity-40"
+          className="rounded-md border border-emerald-600/50 bg-emerald-50/70 px-3 py-1.5 text-[0.8125rem] text-emerald-800 transition hover:border-emerald-600 hover:bg-emerald-50 disabled:opacity-40"
         >
-          I actually got this
+          {override.isPending && override.variables === 'got_it'
+            ? 'Saving…'
+            : 'I actually got this'}
         </button>
         <button
           type="button"
           onClick={() => override.mutate('wrong')}
           disabled={override.isPending || feedback.overridden}
           data-testid="override-wrong"
-          className="rounded-md border border-line bg-surface px-3 py-1.5 text-[0.8125rem] text-ink transition hover:border-accent disabled:opacity-40"
+          className="rounded-md border border-rose-500/50 bg-rose-50/70 px-3 py-1.5 text-[0.8125rem] text-rose-800 transition hover:border-rose-500 hover:bg-rose-50 disabled:opacity-40"
         >
-          No, I was wrong
+          {override.isPending && override.variables === 'wrong'
+            ? 'Saving…'
+            : 'No, I was wrong'}
         </button>
         <button
           type="button"

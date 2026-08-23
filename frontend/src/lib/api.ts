@@ -198,6 +198,24 @@ export type RecallGroup = {
   accuracy: number | null
 }
 export type Recall = { today: string; groups: RecallGroup[]; total_due: number }
+
+/** One place you have studied, offered as a ready-made set. */
+export type StudySet = {
+  kind: 'topic' | 'subtopic' | 'lesson'
+  id: number
+  name: string
+  path: string
+  concept_ids: number[]
+  concepts: RecallConcept[]
+  concept_count: number
+  mcqs_available: number
+  due_count: number
+  answered: number
+  correct: number
+  accuracy: number | null
+  last_studied: string | null
+  days_ago: number | null
+}
 export type CalendarMonth = { month: string; days: CalendarDay[] }
 
 export type BackupEntry = {
@@ -710,6 +728,14 @@ export const api = {
 
   calendar: (month: string) => request<CalendarMonth>(`/api/notes/calendar/${month}`),
   recall: () => request<Recall>('/api/revision/recall'),
+  generateQuestions: (conceptIds: number[]) =>
+    request<{ generated: number; concepts: string[] }>('/api/practice/generate', {
+      method: 'POST',
+      body: JSON.stringify({ concept_ids: conceptIds.slice(0, 12) }),
+    }),
+  practiceSets: () =>
+    request<{ sets: StudySet[]; needs_generation: StudySet[] }>('/api/practice/sets'),
+  revisionSets: () => request<{ sets: StudySet[] }>('/api/revision/sets'),
 
   backupList: () => request<BackupList>('/api/backup/list'),
   backupNow: () => request<BackupRun>('/api/backup/now', { method: 'POST' }),
@@ -770,10 +796,10 @@ export const api = {
     request<PracticeSummary>(`/api/practice/session/${id}/summary`),
 
   revisionDashboard: () => request<RevisionDashboard>('/api/revision/dashboard'),
-  startRevision: (count: number) =>
+  startRevision: (count: number, conceptIds?: number[]) =>
     request<{ id: number; planned_count: number }>('/api/revision/session', {
       method: 'POST',
-      body: JSON.stringify({ count }),
+      body: JSON.stringify({ count, concept_ids: conceptIds ?? null }),
     }),
   nextProseQuestion: (id: number) =>
     request<{ done: boolean; question?: ProseQuestion; summary?: RevisionSummary }>(

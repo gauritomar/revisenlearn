@@ -262,11 +262,20 @@ def _lesson_node(session: Session, lesson: Lesson) -> dict:
 def todo_board(session: Session, *, subject_id: int | None = None,
                topic_id: int | None = None, has_due_date: bool | None = None,
                hide_completed: bool = True) -> dict:
-    """"A flat, filterable, cross-cutting list combining standalone Todos and
-    any open Lesson/Item across every subject." (addendum §6)
+    """The user's own todos. Nothing else.
 
-    This is the view with the hide-completed toggle, default on — its job is
-    "what's left", unlike Roadmap.
+    Addendum §6 described "a flat, filterable, cross-cutting list combining
+    standalone Todos and any open Lesson/Item across every subject", and that
+    is what this was. It was wrong in use, twice over:
+
+      * "Keep to-dos as a completely separate functionality where I can [put]
+        things according to my own need, that's for my own viewing."
+      * Mixing them made the board lie. Its first rows were lessons, which
+        have no delete — so deleting a todo looked broken — and one press of
+        Select all → Mark done silently marked twenty-one lessons complete.
+
+    A lesson's status belongs to the Roadmap, where the whole curriculum is in
+    view and one click means one lesson. This board is a list you own.
     """
     entries: list[dict] = []
 
@@ -287,44 +296,6 @@ def todo_board(session: Session, *, subject_id: int | None = None,
             "context": None,
         })
 
-    lessons = session.exec(
-        select(Lesson).where(Lesson.deleted_at.is_(None))
-        .order_by(Lesson.position, Lesson.id)
-    ).all()
-    topics = {t.id: t for t in session.exec(select(Topic)).all()}
-    subtopics = {s.id: s for s in session.exec(select(Subtopic)).all()}
-
-    for lesson in lessons:
-        topic = topics.get(lesson.topic_id)
-        subtopic = subtopics.get(lesson.subtopic_id) if lesson.subtopic_id else None
-        context = " > ".join(
-            part for part in [topic.name if topic else None,
-                              subtopic.name if subtopic else None] if part
-        )
-        entries.append({
-            "kind": "lesson",
-            "id": lesson.id,
-            "title": lesson.name,
-            "done": lesson.status == "done",
-            "due_date": None,
-            "subject_id": topic.subject_id if topic else None,
-            "topic_id": lesson.topic_id,
-            "lesson_id": lesson.id,
-            "context": context or None,
-        })
-        for item in live_items(session, lesson.id):
-            entries.append({
-                "kind": "lesson_item",
-                "id": item.id,
-                "title": item.text,
-                "done": item.checked,
-                "due_date": None,
-                "subject_id": topic.subject_id if topic else None,
-                "topic_id": lesson.topic_id,
-                "lesson_id": lesson.id,
-                "context": lesson.name,
-            })
-
     if subject_id is not None:
         entries = [e for e in entries if e["subject_id"] == subject_id]
     if topic_id is not None:
@@ -343,7 +314,7 @@ def todo_board(session: Session, *, subject_id: int | None = None,
 
 
 def dashboard_todos(session: Session, limit: int = 7) -> list[dict]:
-    """Addendum §6 — "a short Todos panel (5–7 items, standalone todos plus any
-    due-dated items, nearest due date first)"."""
+    """Addendum §6 — "a short Todos panel (5–7 items … nearest due date
+    first)". Standalone todos only, like the board itself."""
     board = todo_board(session, hide_completed=True)
     return board["entries"][:limit]
