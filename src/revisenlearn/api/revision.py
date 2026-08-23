@@ -195,3 +195,29 @@ def finish(session_id: int, session: Session = Depends(get_session)) -> dict:
         return revision.finish(session, session_id)
     except LookupError as exc:
         raise HTTPException(404, str(exc)) from None
+
+
+# --------------------------------------------------------------------------
+# What to revise today, traced to the day it was studied
+# --------------------------------------------------------------------------
+
+@router.get("/revision/recall")
+def recall_today(session: Session = Depends(get_session)) -> dict:
+    """"Today you have to revise what you studied 1/3/10 days ago."
+
+    FSRS decides the intervals (§9.3); this says which day's writing each due
+    concept came from, so the reminder is about work the user remembers doing
+    rather than a bare number.
+    """
+    from ..recall import due_by_study_day
+
+    return due_by_study_day(session)
+
+
+@router.get("/revision/study-days")
+def recent_study_days(days: int = 30,
+                      session: Session = Depends(get_session)) -> dict:
+    """Recent days that produced concepts, and how many are due back now."""
+    from ..recall import study_days
+
+    return {"days": study_days(session, days)}

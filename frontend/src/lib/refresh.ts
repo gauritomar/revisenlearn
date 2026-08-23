@@ -25,6 +25,8 @@ const KEYS = [
   'tags',
   'study-next',
   'progress',
+  'recall',
+  'practice-available',
 ]
 
 export function useRefreshEverything() {

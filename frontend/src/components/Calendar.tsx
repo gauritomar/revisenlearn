@@ -126,7 +126,17 @@ export function Calendar() {
               onClick={() => day && openDate(key)}
               data-testid={`calendar-day-${key}`}
               data-has-notes={day ? 'true' : 'false'}
-              title={day ? `${day.note_count} note${day.note_count === 1 ? '' : 's'}` : undefined}
+              data-due={day?.due_count ?? 0}
+              title={day
+                ? [
+                    day.note_count > 0
+                      ? `${day.note_count} note${day.note_count === 1 ? '' : 's'}`
+                      : null,
+                    day.due_count > 0
+                      ? `${day.due_count} review${day.due_count === 1 ? '' : 's'} due`
+                      : null,
+                  ].filter(Boolean).join(' · ')
+                : undefined}
               className={[
                 'flex min-h-[3.1rem] flex-col items-stretch gap-0.5 rounded-md p-1 text-left transition',
                 inMonth ? '' : 'opacity-35',
@@ -136,16 +146,25 @@ export function Calendar() {
             >
               <span
                 className={[
-                  'text-[0.6875rem] tabular-nums',
+                  'flex items-baseline gap-1 text-[0.6875rem] tabular-nums',
                   isToday ? 'font-semibold text-accent-deep' : 'text-muted',
                 ].join(' ')}
               >
                 {date.getDate()}
                 {isToday && (
                   <span
-                    className="ml-0.5 inline-block size-1 rounded-full bg-accent align-middle"
+                    className="inline-block size-1 rounded-full bg-accent align-middle"
                     aria-hidden="true"
                   />
+                )}
+                {/* Work coming back, as distinct from work done. */}
+                {day && day.due_count > 0 && (
+                  <span
+                    data-testid={`calendar-due-${key}`}
+                    className="ml-auto rounded-full bg-amber-100 px-1 text-[0.5625rem] font-medium text-amber-700"
+                  >
+                    {day.due_count}
+                  </span>
                 )}
               </span>
 
@@ -169,9 +188,14 @@ export function Calendar() {
                     +{day.topics.length - 2}
                   </span>
                 )}
-                {day && day.topics.length === 0 && (
+                {day && day.topics.length === 0 && day.note_count > 0 && (
                   <span className="px-1 text-[0.5625rem] leading-[1.35] text-faint">
                     {day.note_count} note{day.note_count === 1 ? '' : 's'}
+                  </span>
+                )}
+                {day && day.note_count === 0 && day.due_count > 0 && (
+                  <span className="px-1 text-[0.5625rem] leading-[1.35] text-faint">
+                    to revise
                   </span>
                 )}
               </span>

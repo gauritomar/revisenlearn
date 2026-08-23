@@ -404,8 +404,21 @@ def calendar_month(month: str,
                     )
                 )
 
+    # The other half of a calendar in a spaced-repetition app: not only what
+    # was written on a day, but what comes back on it. Overdue work counts as
+    # today's, because that is when the user has to do it.
+    from ..recall import upcoming_by_day
+
+    due = upcoming_by_day(session, first, last)
+    for key, count in due.items():
+        day = by_day.setdefault(key, {"date": date_cls.fromisoformat(key),
+                                      "note_count": 0, "topics": [],
+                                      "_seen": set(), "_notes": set()})
+        day["due_count"] = count
+
     days = [
-        CalendarDay(date=d["date"], note_count=d["note_count"], topics=d["topics"])
+        CalendarDay(date=d["date"], note_count=d["note_count"],
+                    topics=d["topics"], due_count=d.get("due_count", 0))
         for d in sorted(by_day.values(), key=lambda d: d["date"])
     ]
     return CalendarMonth(month=month, days=days)

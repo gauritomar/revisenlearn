@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
 
 import { api, type PracticeFeedback, type PracticeQuestion, type PracticeSummary } from '../lib/api'
+import { useUI } from '../store/ui'
 
 /** Quick Practice (spec §9.1 **[LOCKED]**).
  *
@@ -20,6 +21,17 @@ export function Practice() {
   const [stage, setStage] = useState<Stage>('picker')
   const [sessionId, setSessionId] = useState<number | null>(null)
   const [summary, setSummary] = useState<PracticeSummary | null>(null)
+  const pending = useUI((s) => s.pendingPracticeSession)
+  const setPendingPractice = useUI((s) => s.setPendingPractice)
+
+  // A session made elsewhere — "practise what you studied three days ago" —
+  // arrives already built, so the picker would only be in the way.
+  useEffect(() => {
+    if (pending === null) return
+    setSessionId(pending)
+    setStage('running')
+    setPendingPractice(null)
+  }, [pending, setPendingPractice])
 
   if (stage === 'running' && sessionId !== null) {
     return (

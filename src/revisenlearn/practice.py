@@ -41,14 +41,21 @@ def _now() -> datetime:
 
 @dataclass(frozen=True)
 class Scope:
-    """"all, or specific subjects/topics/tags" (§9.1)."""
+    """"all, or specific subjects/topics/tags" (§9.1).
+
+    `concept_ids` is the fourth: the calendar hands back exactly the concepts
+    that came out of one day's notes, so "revise what you studied on Tuesday"
+    is a session rather than a filter the user has to reconstruct.
+    """
 
     subject_ids: tuple[int, ...] = ()
     topic_ids: tuple[int, ...] = ()
+    concept_ids: tuple[int, ...] = ()
 
     def to_json(self) -> str:
         return json.dumps({"subject_ids": list(self.subject_ids),
-                           "topic_ids": list(self.topic_ids)})
+                           "topic_ids": list(self.topic_ids),
+                           "concept_ids": list(self.concept_ids)})
 
     @classmethod
     def from_payload(cls, payload: dict | None) -> "Scope":
@@ -56,11 +63,15 @@ class Scope:
         return cls(
             subject_ids=tuple(payload.get("subject_ids") or ()),
             topic_ids=tuple(payload.get("topic_ids") or ()),
+            concept_ids=tuple(payload.get("concept_ids") or ()),
         )
 
 
 def _scoped_concept_ids(session: Session, scope: Scope) -> set[int] | None:
     """None means "everything"."""
+    if scope.concept_ids:
+        # An explicit list wins: it is already the answer, not a filter.
+        return set(scope.concept_ids)
     if not scope.subject_ids and not scope.topic_ids:
         return None
     stmt = select(Concept).where(Concept.deleted_at.is_(None))

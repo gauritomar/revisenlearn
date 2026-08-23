@@ -287,11 +287,15 @@ class CalendarDay(BaseModel):
     date: date
     note_count: int
     topics: list[CalendarPill] = []
+    #: Concepts falling due on this day. Overdue work is counted on today,
+    #: which is when the user actually has to do it.
+    due_count: int = 0
 
 
 class CalendarMonth(BaseModel):
     month: str  # YYYY-MM
-    #: Only days that actually have notes. The grid is drawn client-side.
+    #: Only days with something on them — writing, or work coming back. The
+    #: grid is drawn client-side.
     days: list[CalendarDay] = []
 
 

@@ -4,6 +4,7 @@ import { api, type Note, type Resource } from '../lib/api'
 import { useUI } from '../store/ui'
 import { ResourceRow } from './ResourceList'
 import { Calendar } from './Calendar'
+import { ReviseToday } from './ReviseToday'
 import type { TodoEntry } from '../lib/api'
 
 /** Spec §14 Dashboard, v1.
@@ -90,6 +91,12 @@ export function Dashboard({ onView }: { onView: (v: string) => void }) {
           tab of its own; it lives here now. */}
       <Section title="Calendar" testid="dash-calendar">
         <Calendar />
+      </Section>
+
+      {/* The calendar's other half: what today owes you, traced back to the
+          day you wrote it, with its questions one click away. */}
+      <Section title="Revise today" testid="dash-revise">
+        <ReviseToday onView={onView} />
       </Section>
 
       {/* Today */}

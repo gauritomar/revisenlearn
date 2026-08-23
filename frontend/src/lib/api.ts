@@ -178,7 +178,35 @@ export type Placement = {
 }
 
 export type CalendarPill = { topic_id: number; name: string; colour: string | null }
-export type CalendarDay = { date: string; note_count: number; topics: CalendarPill[] }
+export type CalendarDay = {
+  date: string
+  note_count: number
+  topics: CalendarPill[]
+  /** Reviews falling due that day; overdue work counts on today. */
+  due_count: number
+}
+
+/** One day's worth of studying, coming back for review. */
+export type RecallConcept = {
+  id: number
+  name: string
+  mcqs_available: number
+  answered: number
+  correct: number
+  accuracy: number | null
+}
+export type RecallGroup = {
+  studied_on: string | null
+  days_ago: number | null
+  concept_ids: number[]
+  concepts: RecallConcept[]
+  due_count: number
+  mcqs_available: number
+  answered: number
+  correct: number
+  accuracy: number | null
+}
+export type Recall = { today: string; groups: RecallGroup[]; total_due: number }
 export type CalendarMonth = { month: string; days: CalendarDay[] }
 
 export type BackupEntry = {
@@ -697,6 +725,7 @@ export const api = {
   },
 
   calendar: (month: string) => request<CalendarMonth>(`/api/notes/calendar/${month}`),
+  recall: () => request<Recall>('/api/revision/recall'),
 
   backupList: () => request<BackupList>('/api/backup/list'),
   backupNow: () => request<BackupRun>('/api/backup/now', { method: 'POST' }),

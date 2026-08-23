@@ -33,6 +33,10 @@ type UIState = {
   pipelineBadge: boolean
   /** §6 — below ~900px the panels overlay, one at a time. */
   narrowPanel: 'left' | 'right' | null
+  /** A practice session started from somewhere other than the Practice
+   *  screen — "revise what you studied on Tuesday" makes the session, and
+   *  Practice runs it instead of showing its picker. */
+  pendingPracticeSession: number | null
 
   toggleLeft: () => void
   toggleRight: () => void
@@ -62,6 +66,7 @@ type UIState = {
   setRightTab: (tab: RightTab) => void
   setPipelineBadge: (on: boolean) => void
   setNarrowPanel: (panel: 'left' | 'right' | null) => void
+  setPendingPractice: (sessionId: number | null) => void
 }
 
 export type RightTab = 'checklist' | 'pipeline' | 'resources'
@@ -92,6 +97,7 @@ export const useUI = create<UIState>()(
       rightTab: 'checklist',
       pipelineBadge: false,
       narrowPanel: null,
+      pendingPracticeSession: null,
 
       toggleLeft: () => set((s) => ({ leftCollapsed: !s.leftCollapsed })),
       toggleRight: () => set((s) => ({ rightCollapsed: !s.rightCollapsed })),
@@ -191,6 +197,7 @@ export const useUI = create<UIState>()(
           : { rightTab: tab }),
       setPipelineBadge: (on) => set({ pipelineBadge: on }),
       setNarrowPanel: (panel) => set({ narrowPanel: panel }),
+      setPendingPractice: (sessionId) => set({ pendingPracticeSession: sessionId }),
     }),
     {
       name: 'rnl-ui',
